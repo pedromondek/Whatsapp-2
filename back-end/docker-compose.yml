@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+
+  postgres-compose:
+    volumes:
+      - ./db:/var/lib/postgresql/data
+    container_name: postgresdb
+    image: postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: 12345
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_LISTEN_PORT: 8001
+    ports:
+      - "8001:8001"
+
+
+volumes:
+  postgres-data:
