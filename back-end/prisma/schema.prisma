@@ -12,32 +12,38 @@ model User {
   id           Int        @id @default(autoincrement()) @map("_id")
   username     String     @unique
   password     String
-  profileImage Bytes
+  profileImage Bytes?
   chats        UserChat[]
   message      Message[]  @relation("Author Message")
+  online       Boolean    @default(false)
 }
 
 model Chat {
-  id        Int        @id @default(autoincrement()) @map("_id")
-  title     String
-  chattings UserChat[]
-  messages  Message[]  @relation("Chat Message")
+  id         Int        @id @default(autoincrement()) @map("_id")
+  title      String?
+  createdAt  DateTime   @default(now())
+  chattings  UserChat[]
+  messages   Message[]  @relation("Chat Message")
+  isGroup    Boolean    @default(false)
+  groupImage Bytes?
 }
 
 model UserChat {
   userId Int
   chatId Int
-  user   User @relation(fields: [userId], references: [id])
-  chat   Chat @relation(fields: [chatId], references: [id])
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chat   Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
 
   @@id([userId, chatId])
 }
 
 model Message {
-  id       Int    @id @default(autoincrement()) @map("_id")
-  authorId Int
-  chatId   Int
-  author   User   @relation("Author Message", fields: [authorId], references: [id])
-  chat     Chat   @relation("Chat Message", fields: [chatId], references: [id])
-  content  String
+  id        Int      @id @default(autoincrement()) @map("_id")
+  authorId  Int
+  chatId    Int
+  author    User     @relation("Author Message", fields: [authorId], references: [id], onDelete: Cascade)
+  chat      Chat     @relation("Chat Message", fields: [chatId], references: [id], onDelete: Cascade)
+  content   String
+  timestamp DateTime
+  viewed    Boolean  @default(false)
 }
