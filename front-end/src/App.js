@@ -1,10 +1,16 @@
 import logo from "./logo.svg";
-import { useState, useEffect } from "react";
-import axios from "axios";
+import React, { useState, useEffect, useRef } from "react";
+import axios, { all } from "axios";
 // import path from "path-browserify";
 // import fs from "fs";
 import imageCompression from "browser-image-compression";
+import { toZonedTime, format } from "date-fns-tz";
+import { differenceInDays } from "date-fns";
+// import { io } from "socket.io-client";
+import { socket } from "./socket";
+// import { connectWs } from "../../back-end/src/routes/ws";
 import "./App.css";
+// import { User } from "./dto/frontend.dto";
 
 function App() {
   const [isLoginPage, setIsLoginPage] = useState(true);
@@ -124,8 +130,9 @@ function LoginPage({ goSignInPage, onLoginSuccess }) {
         password,
       })
       .finally(setIsVisible(false))
-      .catch((error) => {
-        setIncorrectLoginError(error.response.data);
+      .catch((err) => {
+        console.log(err);
+        setIncorrectLoginError(err.response.data);
         return setIncorrectLogin(true);
       });
     if (login) {
@@ -133,6 +140,10 @@ function LoginPage({ goSignInPage, onLoginSuccess }) {
       setIncorrectLogin(false);
       return;
     }
+  };
+
+  const handleEnter = async (event) => {
+    if (event.key === "Enter") handleLogin();
   };
 
   return (
@@ -155,6 +166,7 @@ function LoginPage({ goSignInPage, onLoginSuccess }) {
             placeholder="Informe seu usuário"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
+            onKeyUp={handleEnter}
           />
           <h3>Senha</h3>
           <input
@@ -163,6 +175,7 @@ function LoginPage({ goSignInPage, onLoginSuccess }) {
             placeholder="Digite sua senha"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onKeyUp={handleEnter}
           />
           {incorrectLogin && (
             <span className="incorrectInputUser">{incorrectLoginError}</span>
@@ -334,6 +347,11 @@ function SignInAccountPage({ goLoginPage }) {
                 setIncorrectConfirmPassword(false);
               }
             }}
+            onKeyUp={(e) => {
+              if (e.key === "Enter" && e.target.value.length > 0) {
+                handleCreateAccount();
+              }
+            }}
           />
           {incorrectConfirmPassword && (
             <span className="incorrectInputUser">{incorrectPassword}</span>
@@ -361,6 +379,40 @@ function SignInAccountPage({ goLoginPage }) {
 }
 
 function ChattingPage({ account, onLogout, setUser }) {
+  const [isConnected, setIsConnected] = useState(socket.connected);
+  const [timezone, setTimeZone] = "America/Sao_Paulo";
+  // const [socketT, setSocketT] = useState(false);
+
+  useEffect(() => {
+    const onConnect = () => {
+      socket.emit("registerConnection", { userId });
+      setIsConnected(true);
+    };
+
+    function onDisconnect() {
+      setIsConnected(false);
+    }
+
+    // const newSocket = socket(userId);
+    // setSocketT(newSocket);
+    // newSocket.on("connect");
+    socket.on("connect", onConnect);
+    // newSocket.on("disconnect");
+    socket.on("disconnect", onDisconnect);
+
+    return () => {
+      // newSocket.off("connect");
+      socket.off("connect", onConnect);
+      // newSocket.off("disconnect");
+      socket.off("disconnect", onDisconnect);
+    };
+  }, []);
+
+  const [messageInput, setMessageInput] = useState("");
+  const [messages, setMessages] = useState([]);
+  const lastMessageSend = useRef(null);
+  const [isFirstMessage, setIsFirstMessage] = useState(null);
+
   let userId = account.id;
   let username = account.username;
   let password = account.password;
@@ -380,6 +432,36 @@ function ChattingPage({ account, onLogout, setUser }) {
   const [isVisible, setIsVisible] = useState("");
   const [isVisiblePasswordChange, setIsVisiblePasswordChange] = useState("");
   const [isVisibleUsernameChange, setIsVisibleUsernameChange] = useState("");
+  const [isFocusedCreateChattingIcon, setFocusedCreateChattingIcon] =
+    useState(false);
+
+  const [isTutorial, setTutorial] = useState(false);
+  const [isCreatingChat, setCreatingChat] = useState(false);
+  const [creatingChatUser, setChatUser] = useState(false);
+  const [creatingChatGroup, setChatGroup] = useState(false);
+
+  const [allChats, setAllChats] = useState([]);
+
+  const [searchUsername, setSearchUsername] = useState("");
+  const [searchingUser, setSearchingUser] = useState(false);
+  const [usersFoundQuantity, setUsersFoundQuantity] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState("");
+  let allPages = Array.from({ length: totalPages }, (_, index) => index + 1);
+  const [beyondThePagesLimit, setBeyondThePagesLimit] = useState(false);
+
+  // let usersData = [];
+  let [usersData, setUsersData] = useState([]);
+
+  const [usernameUserChatting, setUsernameUserChatting] = useState("");
+  const [idUserChatting, setIdUserChatting] = useState("");
+  const [profileImageUserChatting, setProfileImageUserChatting] =
+    useState(null);
+  // const [noUserFound, setNoUserFound] = useState(true);
+  const [noUserFound, setNoUserFound] = useState(false);
+
+  const [inicializeUserChat, setInicializeUserChat] = useState(false);
+
   const [isSaved, setSave] = useState(false);
   const [updateLoading, setUpdateLoading] = useState(false);
 
@@ -409,15 +491,17 @@ function ChattingPage({ account, onLogout, setUser }) {
 
       setProfileImage(imgProfile);
       // console.log(accountImage.data);
-    } catch (error) {
+    } catch (err) {
       // console.log(error.response.data);
-      return setError(`${error.response.data}`);
+      return setError(`${err.response.data}`);
     }
   };
 
   // login com imagem atualizada do usuário
   useEffect(() => {
     profileImageUpdated();
+    viewChat();
+    console.log(allChats);
   }, []);
 
   const discardAllChanges = async () => {
@@ -455,10 +539,7 @@ function ChattingPage({ account, onLogout, setUser }) {
         return setError("Mesmo username atual.");
       }
     }
-    // if (usernameUpdate === username) {
-    //   setError("Este username já existe.");
-    //   return console.log("Este username já existe");
-    // }
+
     if (isVisiblePasswordChange) {
       if (password != oldPassword) {
         // setError("Senha antiga incorreta.");
@@ -485,35 +566,23 @@ function ChattingPage({ account, onLogout, setUser }) {
       "Tem certeza que deseja modificar as informações inseridas?"
     );
     if (confirmChanges) {
-      // alert("Informações atualizadas com sucesso!");
       try {
+        const updateUserData = {};
+        if (usernameUpdate) updateUserData.username = usernameUpdate;
+        if (passwordUpdate) updateUserData.password = passwordUpdate;
+
         await axios.put(
           `http://localhost:8000/services/user/update/${userId}`,
           {
-            username: usernameUpdate,
-            password: passwordUpdate,
-            // profileImage:
+            updateUserData,
           }
         );
-      } catch (error) {
+      } catch (err) {
         setIncorrectUsername(true);
         setUpdateLoading(false);
-        return setError(`${error.response.data}`);
+        return setError(`${err.response.data}`);
       }
 
-      // .catch((error) => {
-      //   setIncorrectLoginError(error.response.data);
-      //   // return setIncorrectLogin(true);
-      //   return;
-      // });
-      // if (updateUser) {
-      //   console.log(updateUser.data);
-      //   onLoginSuccess(updateUser.data);
-      //   setIncorrectLogin(false);
-      //   return;
-      // }
-      // App.setUser(updateUser.data);
-      // setTimeout(async () => {
       const updateUserInfos = await axios
         .get(`http://localhost:8000/services/user/${userId}`)
         .catch((error) => {
@@ -530,7 +599,6 @@ function ChattingPage({ account, onLogout, setUser }) {
       // setIncorrectUsername(false);
       setError("");
       setSave(true);
-      // }, 1000);
       return account;
     } else {
       setUpdateLoading(false);
@@ -647,6 +715,325 @@ function ChattingPage({ account, onLogout, setUser }) {
       setUpdateLoading(false);
     }
   };
+
+  const discardCreatingChat = async () => {
+    setSearchingUser(false);
+    setUsersData([]);
+    setUsersFoundQuantity("");
+    setCurrentPage(1);
+    setTotalPages("");
+    // usersData = [];
+    setChatGroup(false);
+    setChatUser(false);
+    setCreatingChat(false);
+  };
+
+  // const searchUserById = async (id) => {}
+  const searchUser = async (username, page) => {
+    try {
+      const reqSearchUser = await axios.get(
+        `http://localhost:8000/services/user/search?username=${username}&page=${page}`
+      );
+
+      setUsersFoundQuantity(reqSearchUser.data.totalItems);
+
+      setTotalPages(reqSearchUser.data.totalPages);
+
+      const users = reqSearchUser.data.data;
+      const usersDataFound = users.map((user) => ({
+        username: user.username,
+        id: user.id,
+        profileImage: user.profileImage
+          ? `data:image/jpeg;base64,${user.profileImage}`
+          : "http://localhost:3000/img/userProfile/default/user-profile-default.svg",
+      }));
+
+      setUsersData(usersDataFound);
+      setCurrentPage(reqSearchUser.data.currentPage);
+
+      // console.log(reqSearchUser.data.itemsPerPage);
+    } catch (error) {
+      if (error.status === 404) {
+        setNoUserFound(true);
+      } else {
+        // console.error(error);
+        console.log(error);
+      }
+    }
+  };
+
+  // const handleClickInputSearchUsername = async () => {
+  //   document.getElementById("searchingUsernameButton").click();
+  // };
+
+  const handleChangePageSearch = async (page) => {
+    setCurrentPage(page);
+    searchUser(searchUsername, page);
+  };
+
+  useEffect(() => {
+    if (Math.abs(allPages.length - currentPage) > 5) {
+      setBeyondThePagesLimit(true);
+    } else {
+      setBeyondThePagesLimit(false);
+    }
+  }, [currentPage, allPages.length]);
+
+  const renderedSearchUsernamePages = () => {
+    const renderedPages = [];
+
+    for (let index = 0; index < allPages.length; index++) {
+      const page = allPages[index];
+
+      if (
+        Math.abs(index + 1 - currentPage) >= 5 &&
+        beyondThePagesLimit === true
+      ) {
+        renderedPages.push(
+          <React.Fragment key={`ellipsis-${index}`}>
+            <a className="userFoundBeyondPages">...</a>
+            <a
+              key={allPages.length}
+              onClick={() => {
+                handleChangePageSearch(allPages.length);
+              }}
+              className={
+                currentPage === allPages.length
+                  ? "userFoundPagesNumberActive"
+                  : "userFoundPagesNumberInactive"
+              }
+            >
+              {allPages.length}
+            </a>
+          </React.Fragment>
+        );
+
+        break;
+      }
+      // // logica para pagina maior que 5 de diferença inicial
+      // if (currentPage > 5 && beyondThePagesLimit === true) {
+      //   renderedPages.push(
+      //     <React.Fragment key={`ellipsis-${1}`}>
+      //       <a
+      //         key={1}
+      //         onClick={() => {
+      //           handleChangePageSearch(1);
+      //         }}
+      //         className={
+      //           currentPage === 1
+      //             ? "userFoundPagesNumberActive"
+      //             : "userFoundPagesNumberInactive"
+      //         }
+      //       >
+      //         {1}
+      //       </a>
+      //       <a className="userFoundBeyondPages">...</a>
+      //     </React.Fragment>
+      //   );
+
+      //   for (
+      //     let index = currentPage - 1;
+      //     // index <= Math.min(allPages.length - 1, currentPage + 4);
+      //     index <= currentPage - 4;
+      //     index--
+      //   ) {
+      //     const page = allPages[index];
+
+      //     renderedPages.push(
+      //       <a
+      //         key={page}
+      //         onClick={() => handleChangePageSearch(page)}
+      //         className={
+      //           currentPage === page
+      //             ? "userFoundPagesNumberActive"
+      //             : "userFoundPagesNumberInactive"
+      //         }
+      //       >
+      //         {page}
+      //       </a>
+      //     );
+      //   }
+
+      //   break;
+      // }
+      else {
+        renderedPages.push(
+          <a
+            key={page}
+            onClick={() => {
+              handleChangePageSearch(page);
+            }}
+            className={
+              currentPage === page
+                ? "userFoundPagesNumberActive"
+                : "userFoundPagesNumberInactive"
+            }
+          >
+            {page}
+          </a>
+        );
+      }
+    }
+
+    return renderedPages;
+  };
+
+  const handleInicializeUserChat = () => {};
+
+  const handleEnterInputMessage = async (event) => {
+    //   if (event.key === "Enter") ();
+    // };
+  };
+
+  const sendMessage = async () => {
+    if (messageInput && messageInput.length > 0) {
+      socket.emit("message", messageInput);
+      setMessageInput("");
+    }
+  };
+
+  // socket io
+  const scrollToLastMessage = () => {
+    if (lastMessageSend.current) {
+      lastMessageSend.current.scrollIntoView({ behavior: "smooth" });
+    }
+  };
+
+  useEffect(() => {
+    socket.on("message", (message) => {
+      // setMessages([message]);
+      setMessages((prevMessages) => [...prevMessages, message]);
+      console.log(messages);
+    });
+
+    return () => {
+      socket.off("message");
+    };
+  }, [sendMessage]);
+
+  useEffect(() => {
+    scrollToLastMessage();
+  }, [messages]);
+
+  const formatTimestamp = (timestamp) => {
+    // console.log(typeof timestamp);
+    const dateTimestamp = new Date(timestamp);
+    // console.log(typeof dateTimestamp);
+    const diffTimestamp = differenceInDays(new Date(), dateTimestamp);
+
+    if (diffTimestamp < 1) {
+      const timestampWithZoneTime = toZonedTime(
+        dateTimestamp,
+        "America/Sao_Paulo"
+        // timezone
+      );
+
+      const formatDefaultTimestamp = format(timestampWithZoneTime, "HH:mm:ss");
+
+      return formatDefaultTimestamp;
+    } else if (diffTimestamp < 2) {
+      const timestampWithZoneTime = toZonedTime(
+        dateTimestamp,
+        "America/Sao_Paulo"
+        // timezone
+      );
+
+      const formatDefaultTimestamp = format(timestampWithZoneTime, "HH:mm:ss");
+
+      return `Ontem ${formatDefaultTimestamp}`;
+    } else if (diffTimestamp < 3) {
+      const timestampWithZoneTime = toZonedTime(
+        dateTimestamp,
+        "America/Sao_Paulo"
+        // timezone
+      );
+
+      const formatDefaultTimestamp = format(timestampWithZoneTime, "HH:mm:ss");
+
+      return `Anteontem ${formatDefaultTimestamp}`;
+    } else {
+      const timestampWithZoneTime = toZonedTime(
+        dateTimestamp,
+        "America/Sao_Paulo"
+        // timezone
+      );
+
+      const formatDefaultTimestamp = format(
+        timestampWithZoneTime,
+        "dd/MM/yyyy HH:mm:ss"
+      );
+
+      return formatDefaultTimestamp;
+    }
+  };
+
+  const viewChat = async () => {
+    try {
+      const responseViewChat = await axios.get(
+        `http://localhost:8000/services/chats/user/${userId}`
+      );
+
+      const chats = responseViewChat.data;
+
+      const chatsData = chats.map((chat) => {
+        if (chat.isGroup) {
+          return {
+            ...chat,
+            groupImage: chat.groupImage
+              ? `data:image/jpeg;base64,${chat.groupImage}`
+              : "http://localhost:3000/img/default-group.png",
+          };
+        } else {
+          return {
+            ...chat,
+            chattings: chat.chattings.map((chatting) => ({
+              ...chatting,
+              user: {
+                ...chatting.user,
+                profileImage:
+                  chatting.user.id != userId && chatting.user.profileImage
+                    ? `data:image/jpeg;base64,${chatting.user.profileImage}`
+                    : chatting.user.profileImage ||
+                      "http://localhost:3000/img/userProfile/default/user-profile-default.svg",
+              },
+            })),
+          };
+        }
+      });
+
+      setAllChats(chatsData);
+
+      console.log(chatsData);
+    } catch (err) {
+      console.error(err);
+      console.log(err);
+    }
+  };
+
+  // useEffect(() => {
+  const createChat = async (userIdSent, userIdReceived) => {
+    // if (isFirstMessage) {
+    try {
+      const responseCreateChat = await axios.post(
+        `http://localhost:8000/services/chat/`,
+        { userIdSent, userIdReceived }
+      );
+
+      console.log(responseCreateChat.data);
+
+      setAllChats((prevChats) => [...prevChats, createChat]);
+    } catch (err) {
+      console.error(err);
+      console.log(err);
+    }
+    // };
+  };
+
+  // }, [isFirstMessage]);
+
+  // useEffect(async () => {
+
+  // }, [allChats]);
 
   return (
     <div className="webHome">
@@ -932,20 +1319,439 @@ function ChattingPage({ account, onLogout, setUser }) {
             </div>
           </div>
           {/* user messages and groups */}
-          <div className="userChatsContainer">
+          <div
+            className="userChatsContainer"
+            style={{ display: changeProfileContainer ? "none" : "block" }}
+          >
+            {allChats.length > 0 ? (
+              allChats.map((chat) => (
+                <div className="viewChatsRightContainer">
+                  <div className="viewChatsOverviewRightContainer">
+                    <img
+                      className="chatImage"
+                      src={
+                        chat.groupImage
+                          ? chat.groupImage
+                          : chat.chattings.find(
+                              (item) => item.user.id != userId
+                            )?.user.profileImage
+                      }
+                    />
+                    <div className="chatTitleAndLastMessageContainer">
+                      <a className="chatTitle">
+                        {chat.title === null
+                          ? chat.chattings.find(
+                              (item) => item.user.id != userId
+                            )?.user.username
+                          : chat.title}
+                      </a>
+                      <div className="chatMessageCheckContainer">
+                        <img
+                          src={
+                            chat.messages[0].viewed
+                              ? "/img/check-message-viewed-icon.svg"
+                              : "/img/check-message-icon.svg"
+                          }
+                          className="chatCheckMessageIcon"
+                        />
+                        <a className="chatLastMessage">
+                          <span
+                            style={{ display: chat.isGroup ? "block" : "none" }}
+                          >
+                            author
+                          </span>{" "}
+                          {chat.messages[0].content}
+                        </a>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        // alignItems: "center",
+                        // justifyContent: "center",
+                        height: "100%",
+                        width: "19%",
+                        // marginRight: "2%",
+                        // paddingRight: "3%",
+                        // transform: "translateX(-25%)",
+                      }}
+                    >
+                      {/* ARRUMAR TIMESTAMP SEM NOTIFICACAO */}
+                      <div className="containerMessageViewedAndTimestamp">
+                        <a className="timestampLastMessageOfChat">
+                          {formatTimestamp(chat.messages[0].timestamp)}
+                        </a>
+                        <span
+                          className="numberOfNotificationsOnChat"
+                          style={{
+                            display:
+                              chat.messages[0].authorId != userId
+                                ? // ? "none"
+
+                                  "block"
+                                : "none",
+                            // "block",
+                          }}
+                        >
+                          1
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p>Nenhum chat disponível.</p>
+            )}
             <div className="userCreateChatsContainer">
-              <div className="userCreateChatsDescriptionContainer">
-                <a className="descriptionCreateChats">Criar Conversa</a>
-                <a className="descriptionCreateChats">Criar Grupo</a>
+              <div
+                className="userCreateChatsDescriptionContainer"
+                style={{
+                  display:
+                    isFocusedCreateChattingIcon || isTutorial ? "flex" : "none",
+                }}
+                onMouseEnter={() => {
+                  setFocusedCreateChattingIcon(true);
+                }}
+                onMouseLeave={() => {
+                  setFocusedCreateChattingIcon(false);
+                }}
+              >
+                <a
+                  style={{ opacity: isFocusedCreateChattingIcon ? 1 : 0 }}
+                  className="descriptionCreateChats"
+                  onClick={() => {
+                    setCreatingChat(true);
+                    setChatGroup(false);
+                    setChatUser(true);
+                  }}
+                >
+                  Criar Conversa
+                </a>
+                <a
+                  style={{ opacity: isFocusedCreateChattingIcon ? 1 : 0 }}
+                  className="descriptionCreateChats"
+                  onClick={() => {
+                    setCreatingChat(true);
+                    setChatUser(false);
+                    setChatGroup(true);
+                  }}
+                >
+                  Criar Grupo
+                </a>
               </div>
-              <div className="userCreateIconsContainer">
-                <a className="iconCreateChats">b</a>
-                <a className="iconCreateChats">c</a>
+              <div
+                className="userCreateIconsContainer"
+                // onFocus={() => {
+                //   setFocusedCreateChattingIcon(true);
+                //   console.log(isFocusedCreateChattingIcon);
+                // }}
+                onMouseEnter={() => {
+                  setFocusedCreateChattingIcon(true);
+                }}
+                onMouseLeave={() => {
+                  setFocusedCreateChattingIcon(false);
+                }}
+              >
+                <img
+                  className="iconCreateChats"
+                  style={{
+                    filter:
+                      isTutorial || isFocusedCreateChattingIcon
+                        ? "brightness(150%)"
+                        : "none" && creatingChatUser
+                        ? "saturate(0%) brightness(300%)"
+                        : "",
+                  }}
+                  src="/img/create-chat-icon.svg"
+                  onClick={() => {
+                    setCreatingChat(true);
+                    setChatGroup(false);
+                    setChatUser(true);
+                  }}
+                />
+                <img
+                  style={{
+                    filter:
+                      isTutorial || isFocusedCreateChattingIcon
+                        ? "brightness(150%)"
+                        : "none" && creatingChatGroup
+                        ? "saturate(0%) brightness(300%)"
+                        : "",
+                  }}
+                  className="iconCreateChats"
+                  src="/img/create-group-icon.svg"
+                  onClick={() => {
+                    setCreatingChat(true);
+                    setChatUser(false);
+                    setSearchingUser(false);
+                    setChatGroup(true);
+                  }}
+                />
               </div>
             </div>
           </div>
         </div>
-        <div className="rightContainerChat"></div>
+        <div className="rightContainerChat">
+          {isCreatingChat ? (
+            <>
+              {(creatingChatUser || creatingChatGroup) && (
+                <div className="closeButtonContainer">
+                  <button
+                    style={{
+                      position: "absolute",
+                      fontSize: "50px",
+                      top: "0px",
+                      height: "fit-content",
+                      // paddingRight: "30px",
+                    }}
+                    className="closeButton"
+                    onClick={discardCreatingChat}
+                  >
+                    x
+                  </button>
+                </div>
+              )}
+              {creatingChatUser ? (
+                <div className="creatingChatWithUserContainer">
+                  <div className="creatingChatWithUserContainerChildren">
+                    <img
+                      style={{
+                        width: "35%",
+                        // height: "50%",
+                        // border: "1px solid red",
+                      }}
+                      src="/img/Mailbox-bro.png"
+                    />
+                    <a
+                      style={{
+                        textAlign: "center",
+                        color: "white",
+                        fontSize: "25px",
+                        marginBottom: "10px",
+                      }}
+                    >
+                      Você deseja enviar mensagem direta para quem?
+                    </a>
+                    <input
+                      className="creatingChatWithUserInput"
+                      type="text"
+                      placeholder="Digite o Username para qual deseja enviar a mensagem"
+                      style={{ marginBottom: "10px" }}
+                      onChange={(e) => {
+                        setSearchUsername(e.target.value);
+                      }}
+                    />
+                    <button
+                      className="creatingChatWithUserButton"
+                      id="searchingUsernameButton"
+                      onClick={() => {
+                        setNoUserFound(false);
+                        searchUser(searchUsername);
+                        setSearchingUser(true);
+                      }}
+                    >
+                      Pesquisar
+                    </button>
+                    <div
+                      style={{ display: searchingUser ? "flex" : "none" }}
+                      className="searchSendMessageContainer"
+                    >
+                      <span className="spanDiviseSearch"></span>
+                      <a className="searchSendMessageLabel">
+                        Usuários Encontrados
+                      </a>
+                      <span
+                        className="spanDiviseSearch"
+                        style={{ marginBottom: "5px" }}
+                      ></span>
+                      <div className="searchUserListContainer">
+                        <div className="searchUsersQuantityLabelContainer">
+                          <a>Encontrados {usersFoundQuantity} usuários.</a>
+                        </div>
+                        {!noUserFound && usersData.length > 0 ? (
+                          usersData
+                            // .filter((users) => users.id != userId)
+                            .map((users) => (
+                              <div
+                                key={users.id}
+                                className="userFoundContainer"
+                                style={{
+                                  display:
+                                    // noUserFound ? "none" :
+                                    "flex",
+                                }}
+                              >
+                                <div className="userFoundPhotoContainer">
+                                  <img
+                                    className="userFoundImageProfile"
+                                    // src="http://localhost:3000/img/userProfile/default/user-profile-default.svg"
+                                    src={users.profileImage}
+                                  />
+                                </div>
+                                <div className="userFoundInfosContainer">
+                                  <a className="userFoundUsername">
+                                    {users.username}
+                                  </a>
+                                  <a className="userFoundId">#{users.id}</a>
+                                </div>
+                                <button
+                                  className="userFoundInicializeChat"
+                                  onClick={() => {
+                                    setInicializeUserChat(true);
+                                    setCreatingChat(false);
+                                    handleInicializeUserChat();
+                                    setUsernameUserChatting(users.username);
+                                    setIdUserChatting(users.id);
+                                    setProfileImageUserChatting(
+                                      users.profileImage
+                                    );
+                                    discardCreatingChat();
+                                    setIsFirstMessage(true);
+                                    createChat(userId, users.id);
+                                  }}
+                                >
+                                  Iniciar Conversa
+                                </button>
+                              </div>
+                            ))
+                        ) : (
+                          <div
+                            style={{
+                              display: noUserFound ? "flex" : "none",
+                              flexDirection: "column",
+                              width: "100%",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <img
+                              src="/img/person_search.svg"
+                              style={{
+                                width: "20%",
+                                // filter: "saturate(0%)",
+                                opacity: "0.5",
+                                userSelect: "none",
+                              }}
+                            />
+                            <a
+                              style={{
+                                color: "#ffffff",
+                                userSelect: "none",
+                                opacity: "0.7",
+                              }}
+                            >
+                              Não foi encontrado um usuário com este Username.
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                      <div
+                        className="userFoundPages"
+                        style={{ display: noUserFound ? "none" : "flex" }}
+                      >
+                        <>{renderedSearchUsernamePages()}</>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : creatingChatGroup ? (
+                <div className="creatingChatGroupContainer">
+                  <div>Grupo</div>
+                </div>
+              ) : null}
+            </>
+          ) : inicializeUserChat ? (
+            <div className="userChatContainer">
+              <div className="userChatLabel">
+                <div className="userChattingProfileContainer">
+                  <img src={profileImageUserChatting} />
+                  <a className="usernameChatting">{usernameUserChatting}</a>
+                </div>
+              </div>
+              <div className="chatContainer">
+                {isFirstMessage && (
+                  <div className="welcomeToUserChatContainer">
+                    <a>Envie sua primeira mensagem ao {usernameUserChatting}</a>
+                  </div>
+                )}
+                {messages.map((msg, index) => (
+                  <a key={index} ref={lastMessageSend} className="messageSend">
+                    {msg}
+                  </a>
+                ))}
+              </div>
+              <div className="sendMessageToChatContainer">
+                <input
+                  className="sendMessageToChatInput"
+                  type="text"
+                  value={messageInput}
+                  onKeyDown={handleEnterInputMessage}
+                  onChange={(e) => {
+                    setMessageInput(e.target.value);
+                  }}
+                  onKeyUp={(e) => {
+                    if (e.key === "Enter" && e.target.value.length > 0) {
+                      setMessageInput(e.target.value);
+                      sendMessage();
+                      setIsFirstMessage(false);
+                    }
+                  }}
+                />
+                <img
+                  className="sendMessageIcon"
+                  src="/img/send-message-icon.svg"
+                  onClick={sendMessage}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="landingChattingPage">
+              <a>
+                Nossa, como aqui está silencioso. Que tal conversar um pouco?😄
+              </a>
+              <img
+                style={{ width: "600px" }}
+                src="/img/messaging-landing.svg"
+              />
+              <a>
+                Inicie uma conversa apertando nos{" "}
+                <span
+                  className="hoverTutorialChatting"
+                  style={{
+                    cursor: "help",
+                    borderBottom: isTutorial ? "2px solid #25D366" : "none",
+                    color: "#25D366",
+                    fontWeight: "bold",
+                  }}
+                  onMouseEnter={() => {
+                    setTutorial(true);
+                  }}
+                  onMouseLeave={() => {
+                    setTutorial(false);
+                  }}
+                >
+                  balões verdes{" "}
+                </span>
+                <img
+                  className="hoverTutorialChattingIcon"
+                  style={{ cursor: "help", width: "25px" }}
+                  src="/img/create-chat-icon.svg"
+                  onMouseEnter={() => {
+                    setTutorial(true);
+                  }}
+                  onMouseLeave={() => {
+                    setTutorial(false);
+                  }}
+                />{" "}
+                no canto inferior esquerdo.
+              </a>
+              <br />
+              <a>Ou converse com alguém clicando em seus chats na esquerda.</a>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
