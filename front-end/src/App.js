@@ -500,8 +500,8 @@ function ChattingPage({ account, onLogout, setUser }) {
   // login com imagem atualizada do usuário
   useEffect(() => {
     profileImageUpdated();
-    viewChat();
-    console.log(allChats);
+    viewChats();
+    // console.log(allChats);
   }, []);
 
   const discardAllChanges = async () => {
@@ -522,6 +522,14 @@ function ChattingPage({ account, onLogout, setUser }) {
       setUpdateLoading(false);
       setIncorrectConfirmPassword(false);
     }
+  };
+
+  const exitChat = async () => {
+    setMessages([]);
+    setInicializeUserChat(false);
+    setUsernameUserChatting("");
+    setIdUserChatting("");
+    setProfileImageUserChatting("");
   };
 
   const handleUpdateAccount = async () => {
@@ -928,7 +936,7 @@ function ChattingPage({ account, onLogout, setUser }) {
         // timezone
       );
 
-      const formatDefaultTimestamp = format(timestampWithZoneTime, "HH:mm:ss");
+      const formatDefaultTimestamp = format(timestampWithZoneTime, "HH:mm");
 
       return formatDefaultTimestamp;
     } else if (diffTimestamp < 2) {
@@ -938,7 +946,7 @@ function ChattingPage({ account, onLogout, setUser }) {
         // timezone
       );
 
-      const formatDefaultTimestamp = format(timestampWithZoneTime, "HH:mm:ss");
+      const formatDefaultTimestamp = format(timestampWithZoneTime, "HH:mm");
 
       return `Ontem ${formatDefaultTimestamp}`;
     } else if (diffTimestamp < 3) {
@@ -948,7 +956,7 @@ function ChattingPage({ account, onLogout, setUser }) {
         // timezone
       );
 
-      const formatDefaultTimestamp = format(timestampWithZoneTime, "HH:mm:ss");
+      const formatDefaultTimestamp = format(timestampWithZoneTime, "HH:mm");
 
       return `Anteontem ${formatDefaultTimestamp}`;
     } else {
@@ -960,14 +968,14 @@ function ChattingPage({ account, onLogout, setUser }) {
 
       const formatDefaultTimestamp = format(
         timestampWithZoneTime,
-        "dd/MM/yyyy HH:mm:ss"
+        "dd/MM/yyyy HH:mm"
       );
 
       return formatDefaultTimestamp;
     }
   };
 
-  const viewChat = async () => {
+  const viewChats = async () => {
     try {
       const responseViewChat = await axios.get(
         `http://localhost:8000/services/chats/user/${userId}`
@@ -1003,7 +1011,25 @@ function ChattingPage({ account, onLogout, setUser }) {
 
       setAllChats(chatsData);
 
-      console.log(chatsData);
+      // console.log(chatsData);
+    } catch (err) {
+      console.error(err);
+      console.log(err);
+    }
+  };
+
+  const viewAllInfoChat = async (chatId) => {
+    try {
+      const responseViewAllInfoChat = await axios.get(
+        `http://localhost:8000/services/chats/${chatId}`
+      );
+
+      const chat = responseViewAllInfoChat.data;
+
+      setMessages(chat.messages);
+      // setAllChats(chatsData);
+
+      console.log(chat.messages);
     } catch (err) {
       console.error(err);
       console.log(err);
@@ -1326,7 +1352,28 @@ function ChattingPage({ account, onLogout, setUser }) {
             {allChats.length > 0 ? (
               allChats.map((chat) => (
                 <div className="viewChatsRightContainer">
-                  <div className="viewChatsOverviewRightContainer">
+                  <div
+                    className="viewChatsOverviewRightContainer"
+                    onClick={() => {
+                      setInicializeUserChat(true);
+                      setCreatingChat(false);
+                      handleInicializeUserChat();
+                      setUsernameUserChatting(
+                        chat.chattings.find((item) => item.user.id != userId)
+                          ?.user.username
+                      );
+                      setIdUserChatting(
+                        chat.chattings.find((item) => item.user.id != userId)
+                          ?.user.id
+                      );
+                      setProfileImageUserChatting(
+                        chat.chattings.find((item) => item.user.id != userId)
+                          ?.user.profileImage
+                      );
+                      setIsFirstMessage(false);
+                      viewAllInfoChat(chat.id);
+                    }}
+                  >
                     <img
                       className="chatImage"
                       src={
@@ -1377,25 +1424,24 @@ function ChattingPage({ account, onLogout, setUser }) {
                         // transform: "translateX(-25%)",
                       }}
                     >
-                      {/* ARRUMAR TIMESTAMP SEM NOTIFICACAO */}
                       <div className="containerMessageViewedAndTimestamp">
-                        <a className="timestampLastMessageOfChat">
-                          {formatTimestamp(chat.messages[0].timestamp)}
-                        </a>
-                        <span
+                        <div className="timestampLastMessageOfChat">
+                          <a>{formatTimestamp(chat.messages[0].timestamp)}</a>
+                        </div>
+                        <div
                           className="numberOfNotificationsOnChat"
                           style={{
                             display:
                               chat.messages[0].authorId != userId
-                                ? // ? "none"
-
-                                  "block"
-                                : "none",
-                            // "block",
+                                ? // ?
+                                  "none"
+                                : // "block"
+                                  // : "none",
+                                  "block",
                           }}
                         >
-                          1
-                        </span>
+                          <span>1</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1663,8 +1709,18 @@ function ChattingPage({ account, onLogout, setUser }) {
               ) : null}
             </>
           ) : inicializeUserChat ? (
+            // Chat
             <div className="userChatContainer">
               <div className="userChatLabel">
+                <div className="closeChatButtonContainer">
+                  <button
+                    className="closeButton"
+                    onClick={exitChat}
+                    // onClick={discardAllChanges}
+                  >
+                    x
+                  </button>
+                </div>
                 <div className="userChattingProfileContainer">
                   <img src={profileImageUserChatting} />
                   <a className="usernameChatting">{usernameUserChatting}</a>
@@ -1677,9 +1733,41 @@ function ChattingPage({ account, onLogout, setUser }) {
                   </div>
                 )}
                 {messages.map((msg, index) => (
-                  <a key={index} ref={lastMessageSend} className="messageSend">
-                    {msg}
-                  </a>
+                  <div
+                    style={{
+                      width: "100%",
+                      height: "fit-content",
+                      display: "flex",
+                      justifyContent:
+                        msg.authorId === userId ? "flex-start" : "flex-end",
+                    }}
+                  >
+                    <div
+                      key={index}
+                      ref={lastMessageSend}
+                      className={
+                        // "messageSentContainer"
+                        msg.authorId === userId
+                          ? "messageSentContainer"
+                          : "messageReceivedContainer"
+                      }
+                    >
+                      <a className="messageContent">{msg.content}</a>
+                      <div className="messageInfoCheckTimestamp">
+                        <img
+                          className="messageCheckIcon"
+                          src={
+                            msg.viewed
+                              ? "/img/check-message-viewed-icon.svg"
+                              : "/img/check-message-icon.svg"
+                          }
+                        />
+                        <a className="messageTimestamp">
+                          {formatTimestamp(msg.timestamp)}
+                        </a>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
               <div className="sendMessageToChatContainer">
