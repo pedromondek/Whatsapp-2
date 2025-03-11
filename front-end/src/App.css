@@ -33,9 +33,9 @@
   }
 } */
 
-* {
+/* * {
   border: 1px solid red;
-}
+} */
 
 /* .scroll */
 
@@ -411,6 +411,18 @@
   border: transparent;
 
   color: #25d366;
+}
+
+.closeChatButtonContainer {
+  position: absolute;
+  display: flex;
+  justify-content: end;
+
+  /* width: 100%; */
+  right: 85px;
+  top: 1%;
+
+  height: fit-content;
 }
 
 .loading {
@@ -843,15 +855,16 @@
 
 .userChatLabel {
   width: 100%;
-  height: 9%;
+  height: 9dvh;
 
   background-color: #373e42;
 }
 
 .chatContainer {
   display: flex;
-  flex-direction: column-reverse;
-  gap: 15px;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 5px;
 
   width: 100%;
   height: 85%;
@@ -954,11 +967,88 @@
   word-spacing: 2px;
 }
 
-.messageSend {
+.messageSentContainer {
+  display: flex;
+  flex-direction: column;
+
   color: #ffffff;
   border: 1px solid #25d366;
+  border-radius: 10px;
+  background-color: #075e54;
+
   margin-left: 15px;
   margin-bottom: 15px;
+
+  max-width: 75%;
+
+  height: max-content;
+  width: max-content;
+
+  /* padding-left: 1%;
+  padding-right: 1%; */
+  padding: 0.5%;
+  margin-left: 1%;
+}
+
+.messageReceivedContainer {
+  display: flex;
+  flex-direction: column;
+
+  color: #ffffff;
+  border: 1px solid #ffffffc4;
+  border-radius: 10px;
+  background-color: #26b85b;
+
+  margin-left: 15px;
+  margin-bottom: 15px;
+
+  max-width: 75%;
+
+  height: max-content;
+  width: max-content;
+
+  /* padding-left: 1%;
+  padding-right: 1%; */
+  padding: 0.5%;
+  margin-right: 1%;
+  /* height: max-content; */
+}
+
+.messageInfoCheckTimestamp {
+  display: flex;
+  flex-direction: row;
+  gap: 0.25px;
+
+  align-items: center;
+  justify-content: flex-end;
+
+  height: 25%;
+  margin-bottom: -7px;
+  /* transform: translateX(5%); */
+}
+
+.messageContent {
+  /* word-wrap: break-word; */
+  /* word-break: keep-all; */
+  word-break: break-all;
+
+  padding-left: 5px;
+  padding-right: 5px;
+  padding-bottom: 5px;
+
+  max-width: 99%;
+  height: fit-content;
+}
+
+.messageTimestamp {
+  font-size: 11px;
+  opacity: 0.75;
+  padding-right: 2.5px;
+}
+
+.messageCheckIcon {
+  scale: 0.65;
+  transform: translateY(2%);
 }
 
 .viewChatsRightContainer {
@@ -1023,7 +1113,7 @@
   flex-direction: column;
   gap: 5px;
 
-  width: 80%;
+  width: 60%;
   height: 75%;
 }
 
@@ -1046,7 +1136,14 @@
   /* word-spacing: 4px; */
   letter-spacing: 0.5px;
   padding-left: 5px;
-  text-align: center;
+  text-align: start;
+  width: 100%;
+  height: 100%;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  /* word-break: break-all; */
+  white-space: nowrap;
+  line-height: 22px;
 }
 
 .chatMessageCheckContainer {
@@ -1054,11 +1151,12 @@
   flex-direction: row;
   align-items: center;
   width: 100%;
-  height: 100%;
+  height: 45%;
 }
 
 .chatCheckMessageIcon {
   fill: #25d366;
+  scale: 0.95;
   /* filter: hue-rotate(); */
 }
 
@@ -1076,6 +1174,11 @@
 }
 
 .numberOfNotificationsOnChat {
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
   background-color: #25d366;
   color: #ffffffff;
   border: #075e54;
@@ -1102,6 +1205,13 @@
   width: 100%;
   height: 52%;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.messageCheckIcon {
+  height: fit-content;
 }
 
 @keyframes loading {
