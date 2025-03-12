@@ -412,6 +412,8 @@ function ChattingPage({ account, onLogout, setUser }) {
   const [messages, setMessages] = useState([]);
   const lastMessageSend = useRef(null);
   const [isFirstMessage, setIsFirstMessage] = useState(null);
+  const [chatsId, setChatsId] = useState([]);
+  const [chatId, setChatId] = useState("");
 
   let userId = account.id;
   let username = account.username;
@@ -450,7 +452,6 @@ function ChattingPage({ account, onLogout, setUser }) {
   let allPages = Array.from({ length: totalPages }, (_, index) => index + 1);
   const [beyondThePagesLimit, setBeyondThePagesLimit] = useState(false);
 
-  // let usersData = [];
   let [usersData, setUsersData] = useState([]);
 
   const [usernameUserChatting, setUsernameUserChatting] = useState("");
@@ -468,10 +469,6 @@ function ChattingPage({ account, onLogout, setUser }) {
   const [error, setError] = useState("");
 
   const [changeProfileContainer, setChangeProfileContainer] = useState(false);
-  // get username por id
-  // const userJoin = await axios.get("http://localhost:8000/services/user/:id", {
-  //       username
-  //     });
 
   const profileImageUpdated = async () => {
     try {
@@ -530,6 +527,7 @@ function ChattingPage({ account, onLogout, setUser }) {
     setUsernameUserChatting("");
     setIdUserChatting("");
     setProfileImageUserChatting("");
+    setChatId("");
   };
 
   const handleUpdateAccount = async () => {
@@ -893,31 +891,32 @@ function ChattingPage({ account, onLogout, setUser }) {
     // };
   };
 
-  const sendMessage = async () => {
-    if (messageInput && messageInput.length > 0) {
-      socket.emit("message", messageInput);
-      setMessageInput("");
-    }
-  };
-
-  // socket io
   const scrollToLastMessage = () => {
     if (lastMessageSend.current) {
       lastMessageSend.current.scrollIntoView({ behavior: "smooth" });
     }
   };
 
+  const sendMessage = async () => {
+    if (messageInput && messageInput.length > 0) {
+      socket.emit("message", { userId, chatId, content: messageInput });
+      setMessageInput("");
+    }
+  };
+
   useEffect(() => {
-    socket.on("message", (message) => {
+    // console.log("Esta funcionando?");
+    socket.on("newMessage", (message) => {
       // setMessages([message]);
       setMessages((prevMessages) => [...prevMessages, message]);
-      console.log(messages);
+      console.log(message);
+      scrollToLastMessage();
     });
 
     return () => {
-      socket.off("message");
+      socket.off("newMessage");
     };
-  }, [sendMessage]);
+  }, []);
 
   useEffect(() => {
     scrollToLastMessage();
@@ -1009,14 +1008,25 @@ function ChattingPage({ account, onLogout, setUser }) {
         }
       });
 
-      setAllChats(chatsData);
+      const allChatsId = chats.map((chat) => chat.id);
 
+      setAllChats(chatsData);
+      setChatsId(allChatsId);
+
+      // console.log(allChatsId);
+      // console.log(chatsId);
       // console.log(chatsData);
     } catch (err) {
       console.error(err);
       console.log(err);
     }
   };
+
+  useEffect(() => {
+    if (chatsId.length > 0) {
+      socket.emit("joinChats", { chatsId });
+    }
+  }, [chatsId]);
 
   const viewAllInfoChat = async (chatId) => {
     try {
@@ -1026,7 +1036,9 @@ function ChattingPage({ account, onLogout, setUser }) {
 
       const chat = responseViewAllInfoChat.data;
 
+      setChatId(chatId);
       setMessages(chat.messages);
+      scrollToLastMessage();
       // setAllChats(chatsData);
 
       console.log(chat.messages);
@@ -1054,12 +1066,6 @@ function ChattingPage({ account, onLogout, setUser }) {
     }
     // };
   };
-
-  // }, [isFirstMessage]);
-
-  // useEffect(async () => {
-
-  // }, [allChats]);
 
   return (
     <div className="webHome">
@@ -1440,7 +1446,14 @@ function ChattingPage({ account, onLogout, setUser }) {
                                   "block",
                           }}
                         >
-                          <span>1</span>
+                          <span>
+                            {
+                              messages.filter(
+                                (msg) =>
+                                  msg.viewed === false && msg.authorId != userId
+                              ).length
+                            }
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1741,10 +1754,12 @@ function ChattingPage({ account, onLogout, setUser }) {
                       justifyContent:
                         msg.authorId === userId ? "flex-start" : "flex-end",
                     }}
+                    ref={lastMessageSend}
+                    onFocusCapture={{}}
+                    // FOCUS
                   >
                     <div
                       key={index}
-                      ref={lastMessageSend}
                       className={
                         // "messageSentContainer"
                         msg.authorId === userId
