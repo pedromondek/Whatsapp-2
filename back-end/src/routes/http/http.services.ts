@@ -400,7 +400,9 @@ export class HttpMethods {
   }
 
   // message methods
-  async createMessage(userId: number, chatId: number, content: string, timestamp: Date): Promise<Message> {
+  async createMessage(userId: number, chatId: number, content: string): Promise<Message> {
+    const timestampUtc = new Date();
+
     const userInChat = await this.prisma.userChat.findUniqueOrThrow({
       where: {
         userId_chatId: {
@@ -423,7 +425,7 @@ export class HttpMethods {
           authorId: userId,
           chatId: chatId,
           content: content,
-          timestamp: timestamp,
+          timestamp: timestampUtc,
         },
       })
       .catch((error) => {
