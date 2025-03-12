@@ -343,10 +343,8 @@ export const servicesModule = (prisma: PrismaClient) => {
       return;
     }
 
-    const timestampUtc = new Date();
-
     try {
-      res.send(await servicesMethods.createMessage(idUser, idChat, String(content), timestampUtc));
+      res.send(await servicesMethods.createMessage(idUser, idChat, String(content)));
     } catch (error) {
       console.error(error);
       res.status(error.status).send(error.message);
