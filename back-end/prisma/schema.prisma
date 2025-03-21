@@ -19,13 +19,14 @@ model User {
 }
 
 model Chat {
-  id         Int        @id @default(autoincrement()) @map("_id")
-  title      String?
-  createdAt  DateTime   @default(now())
-  chattings  UserChat[]
-  messages   Message[]  @relation("Chat Message")
-  isGroup    Boolean    @default(false)
-  groupImage Bytes?
+  id          Int        @id @default(autoincrement()) @map("_id")
+  title       String?
+  createdAt   DateTime   @default(now())
+  chattings   UserChat[]
+  messages    Message[]  @relation("Chat Message")
+  isGroup     Boolean    @default(false)
+  groupImage  Bytes?
+  deletedUser String?
 }
 
 model UserChat {
@@ -46,4 +47,5 @@ model Message {
   content   String
   timestamp DateTime
   viewed    Boolean  @default(false)
+  isDeleted Boolean  @default(false)
 }
