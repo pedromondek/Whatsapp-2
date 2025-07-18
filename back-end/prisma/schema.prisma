@@ -19,14 +19,15 @@ model User {
 }
 
 model Chat {
-  id          Int        @id @default(autoincrement()) @map("_id")
-  title       String?
-  createdAt   DateTime   @default(now())
-  chattings   UserChat[]
-  messages    Message[]  @relation("Chat Message")
-  isGroup     Boolean    @default(false)
-  groupImage  Bytes?
-  deletedUser String?
+  id              Int        @id @default(autoincrement()) @map("_id")
+  title           String?
+  createdAt       DateTime   @default(now())
+  chattings       UserChat[]
+  messages        Message[]  @relation("Chat Message")
+  isGroup         Boolean    @default(false)
+  groupImage      Bytes?
+  deletedUser     String[]
+  userDeletedChat String[]
 }
 
 model UserChat {
@@ -39,13 +40,14 @@ model UserChat {
 }
 
 model Message {
-  id        Int      @id @default(autoincrement()) @map("_id")
-  authorId  Int
-  chatId    Int
-  author    User     @relation("Author Message", fields: [authorId], references: [id], onDelete: Cascade)
-  chat      Chat     @relation("Chat Message", fields: [chatId], references: [id], onDelete: Cascade)
-  content   String
-  timestamp DateTime
-  viewed    Boolean  @default(false)
-  isDeleted Boolean  @default(false)
+  id          Int      @id @default(autoincrement()) @map("_id")
+  authorId    Int
+  chatId      Int
+  author      User     @relation("Author Message", fields: [authorId], references: [id], onDelete: Cascade)
+  chat        Chat     @relation("Chat Message", fields: [chatId], references: [id], onDelete: Cascade)
+  content     String
+  timestamp   DateTime
+  viewed      Boolean  @default(false)
+  isDeleted   Boolean  @default(false)
+  userDeleted Boolean  @default(false)
 }
