@@ -73,7 +73,7 @@ In my portfolio you will find a collection of my projects, skills and a little b
 <br>
 
 ## Preview 🎞️
-<video src="/preview/whatsapp2-preview.mp4" width="500px" controls></video>
+<video src="https://github.com/user-attachments/assets/5c603ec3-a83e-4772-b23e-03c7eabae262" controls></video>
 
 <br>
 
