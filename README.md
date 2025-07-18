@@ -74,7 +74,7 @@ Each user can only have one active chat per user.
 <br>
 
 ## Preview 🎞️
-<video src="/preview/whatsapp2-preview.mp4" width="500px" controls></video>
+https://github.com/user-attachments/assets/5c603ec3-a83e-4772-b23e-03c7eabae262
 
 <br>
 
