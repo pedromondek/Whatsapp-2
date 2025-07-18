@@ -4,11 +4,13 @@ import express from 'express';
 import http from 'http';
 import * as services from './routes/http/controller.controller.js';
 import { WebSocketService } from './routes/sockets/ws.js';
+import cors from 'cors';
 
 dotenv.config();
 const app = express();
 export const prisma = new PrismaClient();
 
+app.use(cors());
 app.use(express.json());
 
 const wsServer = http.createServer(app);
