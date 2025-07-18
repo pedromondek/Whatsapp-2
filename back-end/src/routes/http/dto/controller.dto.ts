@@ -29,6 +29,8 @@ export interface IChat {
   title?: string | null;
   createdAt: Date;
   isGroup: boolean;
+  userDeletedChat: string[];
+  deletedUser: string[];
   groupImage: string | null;
   chattings: UserChatDto[];
   messages: MessageDto[];

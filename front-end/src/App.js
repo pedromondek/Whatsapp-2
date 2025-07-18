@@ -1,5 +1,5 @@
 import logo from "./logo.svg";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import axios, { all } from "axios";
 // import path from "path-browserify";
 // import fs from "fs";
@@ -28,6 +28,32 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    // socket.connect();
+
+    const onConnect = () => {
+      if (user) {
+        socket.emit("registerConnection", { userId: user.id });
+      }
+      // setIsConnected(true);
+    };
+
+    const onDisconnect = () => {
+      if (user) {
+        socket.emit("registerDisconnect", { userId: user.id });
+      }
+      // setIsConnected(false);
+    };
+
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+
+    return () => {
+      socket.off("connect");
+      socket.off("disconnect");
+    };
+  }, [user, isLoginPage, isChattingPage]);
+
   const handleCreateAccountPageClick = () => {
     setIsLoginPage(false);
     setIsSignInAccountPage(true);
@@ -45,15 +71,19 @@ function App() {
     setIsSignInAccountPage(false);
     setIsLoginPage(false);
     setIsChattingPage(true);
+    // console.log(userData);
+    socket.connect();
+    // .emit("registerConnection", userData.id);
+    setTimeout(() => socket.emit("registerConnection", userData.id), 500);
   };
 
   const handleLogout = (deletado) => {
-    console.log(deletado);
     if (deletado === false) {
       const confirmLogout = window.confirm(
         "Tem certeza que deseja sair da sua conta?"
       );
       if (confirmLogout) {
+        socket.disconnect();
         setUser(null);
         localStorage.removeItem("user");
         localStorage.clear();
@@ -218,7 +248,12 @@ function SignInAccountPage({ goLoginPage }) {
 
   // create account
   const handleCreateAccount = async () => {
-    if (username === "") {
+    if (
+      username === "" ||
+      username === "Usuário deletado" ||
+      username === "Usuario deletado" ||
+      username === "usuario deletado"
+    ) {
       setError("O usuário está vazio.");
       return console.log("Usuário vazio");
     }
@@ -381,36 +416,14 @@ function SignInAccountPage({ goLoginPage }) {
 function ChattingPage({ account, onLogout, setUser }) {
   const [isConnected, setIsConnected] = useState(socket.connected);
   const [timezone, setTimeZone] = "America/Sao_Paulo";
-  // const [socketT, setSocketT] = useState(false);
-
-  useEffect(() => {
-    const onConnect = () => {
-      socket.emit("registerConnection", { userId });
-      setIsConnected(true);
-    };
-
-    function onDisconnect() {
-      setIsConnected(false);
-    }
-
-    // const newSocket = socket(userId);
-    // setSocketT(newSocket);
-    // newSocket.on("connect");
-    socket.on("connect", onConnect);
-    // newSocket.on("disconnect");
-    socket.on("disconnect", onDisconnect);
-
-    return () => {
-      // newSocket.off("connect");
-      socket.off("connect", onConnect);
-      // newSocket.off("disconnect");
-      socket.off("disconnect", onDisconnect);
-    };
-  }, []);
+  const [loadingPage, setLoadingPage] = useState(true);
 
   const [messageInput, setMessageInput] = useState("");
   const [messages, setMessages] = useState([]);
   const lastMessageSend = useRef(null);
+  const [lastMessage, setLastMessage] = useState([]);
+  const [isScrollChatLoad, setIsScrollLoad] = useState(false);
+  const containerRef = useRef(null);
   const [isFirstMessage, setIsFirstMessage] = useState(null);
   const [chatsId, setChatsId] = useState([]);
   const [chatId, setChatId] = useState("");
@@ -436,13 +449,19 @@ function ChattingPage({ account, onLogout, setUser }) {
   const [isVisibleUsernameChange, setIsVisibleUsernameChange] = useState("");
   const [isFocusedCreateChattingIcon, setFocusedCreateChattingIcon] =
     useState(false);
+  const [isFocusedOnMessage, setFocusedOnMessage] = useState("");
 
   const [isTutorial, setTutorial] = useState(false);
   const [isCreatingChat, setCreatingChat] = useState(false);
   const [creatingChatUser, setChatUser] = useState(false);
   const [creatingChatGroup, setChatGroup] = useState(false);
+  const [showOptionsOfChat, setShowOptionsOfChat] = useState(null);
+  const [showMenuOptionsOfChat, setShowMenuOptionsOfChat] = useState(false);
 
   const [allChats, setAllChats] = useState([]);
+  const [notificationsAllChats, setNotificationsAllChats] = useState([]);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [currentChat, setCurrentChat] = useState([]);
 
   const [searchUsername, setSearchUsername] = useState("");
   const [searchingUser, setSearchingUser] = useState(false);
@@ -456,9 +475,9 @@ function ChattingPage({ account, onLogout, setUser }) {
 
   const [usernameUserChatting, setUsernameUserChatting] = useState("");
   const [idUserChatting, setIdUserChatting] = useState("");
+  const [userChattingOnline, setUserChattingOnline] = useState(false);
   const [profileImageUserChatting, setProfileImageUserChatting] =
     useState(null);
-  // const [noUserFound, setNoUserFound] = useState(true);
   const [noUserFound, setNoUserFound] = useState(false);
 
   const [inicializeUserChat, setInicializeUserChat] = useState(false);
@@ -469,6 +488,69 @@ function ChattingPage({ account, onLogout, setUser }) {
   const [error, setError] = useState("");
 
   const [changeProfileContainer, setChangeProfileContainer] = useState(false);
+
+  // login com imagem atualizada do usuário
+  useEffect(() => {
+    viewChats();
+    profileImageUpdated();
+    getAllNotificationsOfChats();
+  }, []);
+
+  useEffect(() => {
+    reorderChats();
+  }, [chatsId, messages]);
+
+  useEffect(() => {
+    const handleUsersOnline = (userIdConnected) => {
+      console.log(userIdConnected);
+      setOnlineUsers((prevUserOnline) => {
+        if (!prevUserOnline.includes(userIdConnected)) {
+          return [...prevUserOnline, userIdConnected];
+        }
+        return prevUserOnline;
+      });
+    };
+
+    const handleUsersAlreadyOnline = (onlineUsers) => {
+      // console.log("Usuários já online:", onlineUsers);
+      // console.log(typeof onlineUsers);
+      if (onlineUsers.length > 0) {
+        setOnlineUsers((prevUserOnline) => {
+          const newUsersOnline = onlineUsers.filter(
+            (id) => !prevUserOnline.includes(id)
+          );
+          return [...prevUserOnline, ...newUsersOnline];
+        });
+      }
+    };
+
+    const handleUsersOffline = (userIdDisconnected) => {
+      setOnlineUsers((prevUserOnline) =>
+        prevUserOnline.filter((id) => id !== userIdDisconnected)
+      );
+    };
+
+    // socket.on("connect", onConnect);
+    // socket.on("disconnect", onDisconnect);
+    socket.on("alreadyOnline", handleUsersAlreadyOnline);
+    socket.on("userOnline", handleUsersOnline);
+    socket.on("userOffline", handleUsersOffline);
+
+    return () => {
+      // socket.off("connect", onConnect);
+      // socket.off("disconnect", onDisconnect);
+      socket.off("alreadyOnline", handleUsersAlreadyOnline);
+      socket.off("userOnline", handleUsersOnline);
+      socket.off("userOffline", handleUsersOffline);
+    };
+  }, []);
+
+  // socket join chats
+  useEffect(() => {
+    if (chatsId.length > 0) {
+      socket.emit("joinChats", { chatsId });
+    }
+  }, [chatsId, isConnected, account]);
 
   const profileImageUpdated = async () => {
     try {
@@ -490,16 +572,9 @@ function ChattingPage({ account, onLogout, setUser }) {
       // console.log(accountImage.data);
     } catch (err) {
       // console.log(error.response.data);
-      return setError(`${err.response.data}`);
+      return setError(`${err.message}`);
     }
   };
-
-  // login com imagem atualizada do usuário
-  useEffect(() => {
-    profileImageUpdated();
-    viewChats();
-    // console.log(allChats);
-  }, []);
 
   const discardAllChanges = async () => {
     setChangeProfileContainer(false);
@@ -528,6 +603,7 @@ function ChattingPage({ account, onLogout, setUser }) {
     setIdUserChatting("");
     setProfileImageUserChatting("");
     setChatId("");
+    setCurrentChat("");
   };
 
   const handleUpdateAccount = async () => {
@@ -600,6 +676,7 @@ function ChattingPage({ account, onLogout, setUser }) {
       setIsVisible(false);
       setIsVisibleUsernameChange(false);
       setIsVisiblePasswordChange(false);
+      console.log(usernameUpdate);
 
       setUpdateLoading(false);
       // setIncorrectUsername(false);
@@ -617,48 +694,6 @@ function ChattingPage({ account, onLogout, setUser }) {
   };
 
   const resizeImage = async (file) => {
-    // return new Promise((resolve, reject) => {
-    //   const reader = new FileReader();
-    //   reader.onloadend = () => {
-    //     const imgElement = new Image();
-    //     imgElement.onload = () => {
-    //       const canvas = document.createElement("canvas");
-    //       const ctx = canvas.getContext("2d");
-
-    //       const maxWidth = 200;
-    //       const maxHeight = 200;
-    //       let width = imgElement.width;
-    //       let height = imgElement.height;
-
-    //       if (width > height) {
-    //         if (width > maxWidth) {
-    //           height *= maxWidth / width;
-    //           width = maxWidth;
-    //         }
-    //       } else {
-    //         if (height > maxHeight) {
-    //           width *= maxHeight / height;
-    //           height = maxHeight;
-    //         }
-    //       }
-
-    //       canvas.width = width;
-    //       canvas.height = height;
-
-    //       ctx.drawImage(imgElement, 0, 0, width, height);
-
-    //       canvas.toBlob((blob) => {
-    //         const fileName = `${username}_${Date.now()}.png`;
-    //         const file = new File([blob], fileName, { type: "image/png" });
-    //         resolve(file);
-    //       }, "image/png");
-    //     };
-    //     imgElement.src = reader.result;
-    //   };
-
-    //   reader.readAsDataURL(file);
-    // });
-
     const options = {
       maxSizeMB: 2,
       // maxWidthOrHeight: 200,
@@ -706,9 +741,11 @@ function ChattingPage({ account, onLogout, setUser }) {
     if (confirmDeleteAccount) {
       try {
         const deleteAccount = await axios.delete(
-          `http://localhost:8000/services/user/${userId}`
+          `http://localhost:8000/services/user/${userId}`,
+          {
+            params: { username },
+          }
         );
-        console.log(deleteAccount);
         alert(deleteAccount.data);
       } catch (error) {
         console.error(error);
@@ -732,17 +769,18 @@ function ChattingPage({ account, onLogout, setUser }) {
     setChatGroup(false);
     setChatUser(false);
     setCreatingChat(false);
+    exitChat();
   };
 
   // const searchUserById = async (id) => {}
-  const searchUser = async (username, page) => {
+  const searchUser = async (usernameSearch, page) => {
     try {
       const reqSearchUser = await axios.get(
-        `http://localhost:8000/services/user/search?username=${username}&page=${page}`
+        `http://localhost:8000/services/user/search`,
+        { params: { usernameSearch, page, username } }
       );
 
       setUsersFoundQuantity(reqSearchUser.data.totalItems);
-
       setTotalPages(reqSearchUser.data.totalPages);
 
       const users = reqSearchUser.data.data;
@@ -756,8 +794,6 @@ function ChattingPage({ account, onLogout, setUser }) {
 
       setUsersData(usersDataFound);
       setCurrentPage(reqSearchUser.data.currentPage);
-
-      // console.log(reqSearchUser.data.itemsPerPage);
     } catch (error) {
       if (error.status === 404) {
         setNoUserFound(true);
@@ -767,10 +803,6 @@ function ChattingPage({ account, onLogout, setUser }) {
       }
     }
   };
-
-  // const handleClickInputSearchUsername = async () => {
-  //   document.getElementById("searchingUsernameButton").click();
-  // };
 
   const handleChangePageSearch = async (page) => {
     setCurrentPage(page);
@@ -815,54 +847,7 @@ function ChattingPage({ account, onLogout, setUser }) {
         );
 
         break;
-      }
-      // // logica para pagina maior que 5 de diferença inicial
-      // if (currentPage > 5 && beyondThePagesLimit === true) {
-      //   renderedPages.push(
-      //     <React.Fragment key={`ellipsis-${1}`}>
-      //       <a
-      //         key={1}
-      //         onClick={() => {
-      //           handleChangePageSearch(1);
-      //         }}
-      //         className={
-      //           currentPage === 1
-      //             ? "userFoundPagesNumberActive"
-      //             : "userFoundPagesNumberInactive"
-      //         }
-      //       >
-      //         {1}
-      //       </a>
-      //       <a className="userFoundBeyondPages">...</a>
-      //     </React.Fragment>
-      //   );
-
-      //   for (
-      //     let index = currentPage - 1;
-      //     // index <= Math.min(allPages.length - 1, currentPage + 4);
-      //     index <= currentPage - 4;
-      //     index--
-      //   ) {
-      //     const page = allPages[index];
-
-      //     renderedPages.push(
-      //       <a
-      //         key={page}
-      //         onClick={() => handleChangePageSearch(page)}
-      //         className={
-      //           currentPage === page
-      //             ? "userFoundPagesNumberActive"
-      //             : "userFoundPagesNumberInactive"
-      //         }
-      //       >
-      //         {page}
-      //       </a>
-      //     );
-      //   }
-
-      //   break;
-      // }
-      else {
+      } else {
         renderedPages.push(
           <a
             key={page}
@@ -884,48 +869,81 @@ function ChattingPage({ account, onLogout, setUser }) {
     return renderedPages;
   };
 
-  const handleInicializeUserChat = () => {};
-
-  const handleEnterInputMessage = async (event) => {
-    //   if (event.key === "Enter") ();
-    // };
-  };
-
   const scrollToLastMessage = () => {
     if (lastMessageSend.current) {
       lastMessageSend.current.scrollIntoView({ behavior: "smooth" });
     }
   };
 
+  const handleScrollLoadMoreMessages = async (event) => {
+    if (event.target.scrollTop === 0) {
+      const oldScrollHeight = event.target.scrollHeight;
+      viewAllInfoChat(chatId);
+      setIsScrollLoad(true);
+
+      setTimeout(() => {
+        const newScrollHeight = event.target.scrollHeight;
+        event.target.scrollTop = newScrollHeight - oldScrollHeight;
+      }, 100);
+    }
+  };
+
   const sendMessage = async () => {
     if (messageInput && messageInput.length > 0) {
-      socket.emit("message", { userId, chatId, content: messageInput });
+      socket.emit("message", {
+        userId,
+        chatId,
+        content: messageInput,
+      });
       setMessageInput("");
     }
   };
 
+  // new message, new chat socket
   useEffect(() => {
-    // console.log("Esta funcionando?");
+    socket.on("newChatNotification", () => viewChats());
+
+    socket.on("userExitChat", () => viewChats());
+
     socket.on("newMessage", (message) => {
-      // setMessages([message]);
       setMessages((prevMessages) => [...prevMessages, message]);
-      console.log(message);
-      scrollToLastMessage();
+      setLastMessage([message]);
+
+      // console.log(message);
     });
 
     return () => {
+      socket.off("newChatNotification");
+      socket.off("userExitChat");
       socket.off("newMessage");
     };
   }, []);
 
+  // update last message
   useEffect(() => {
-    scrollToLastMessage();
+    if (lastMessage[0]) {
+      setAllChats((prevChats) =>
+        prevChats.map((chat) =>
+          chat.id === lastMessage.chatId
+            ? { ...chat, messages: [lastMessage, ...chat.messages] }
+            : chat
+        )
+      );
+    }
+
+    console.log(allChats);
+    getAllNotificationsOfChats();
+
+    if (!isScrollChatLoad) {
+      setTimeout(() => {
+        scrollToLastMessage();
+      }, 100);
+    }
+    if (isScrollChatLoad) setIsScrollLoad(false);
   }, [messages]);
 
   const formatTimestamp = (timestamp) => {
-    // console.log(typeof timestamp);
     const dateTimestamp = new Date(timestamp);
-    // console.log(typeof dateTimestamp);
     const diffTimestamp = differenceInDays(new Date(), dateTimestamp);
 
     if (diffTimestamp < 1) {
@@ -974,6 +992,88 @@ function ChattingPage({ account, onLogout, setUser }) {
     }
   };
 
+  function ChatMessageContent({ chat, lastMessage }) {
+    const displayedContent = useMemo(() => {
+      if (lastMessage.length > 0) {
+        const lastMsg = lastMessage[0];
+
+        if (chat.id === lastMsg.chatId) {
+          if (chat.messages[0].id > lastMsg.id) {
+            return chat.messages[0].content;
+          } else {
+            chat.messages[0].content = lastMsg.content;
+            return chat.messages[0].content;
+          }
+        } else {
+          return chat.messages[0]?.content;
+        }
+      }
+      return chat.messages[0]?.content;
+    }, [chat, lastMessage]);
+
+    return <span>{displayedContent}</span>;
+  }
+
+  function ChatMessageTimestamp({ chat, lastMessage }) {
+    const displayedTimestamp = useMemo(() => {
+      if (lastMessage.length > 0) {
+        const lastMsg = lastMessage[0];
+
+        if (chat.id === lastMsg.chatId) {
+          if (chat.messages[0].id > lastMsg.id) {
+            return formatTimestamp(chat.messages[0].timestamp);
+          } else {
+            chat.messages[0].timestamp = lastMsg.timestamp;
+            return formatTimestamp(chat.messages[0].timestamp);
+          }
+        } else {
+          return formatTimestamp(chat.messages[0]?.timestamp);
+        }
+      }
+      return formatTimestamp(chat.messages[0]?.timestamp);
+    }, [chat, lastMessage]);
+
+    // return "TESTE";
+    return <span>{displayedTimestamp}</span>;
+  }
+
+  const getAllNotificationsOfChats = async () => {
+    try {
+      const responseNotifications = await axios.get(
+        `http://localhost:8000/services/chats/notifications/${userId}`
+      );
+      // .then((response) => setNotificationsAllChats(response.data));
+      // console.log(responseNotifications.data);
+      setNotificationsAllChats(responseNotifications.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  function NumberNotifications({ chat }) {
+    const notification = notificationsAllChats.find(
+      (notif) => notif.chatId === chat.id
+    );
+
+    if (notification) {
+      return (
+        <div
+          className="numberOfNotificationsOnChat"
+          style={{
+            display: notification.messagesUnviewed > 0 ? "block" : "none",
+          }}
+        >
+          <span>{notification.messagesUnviewed}</span>
+        </div>
+      );
+    }
+    return null;
+  }
+
+  const viewMessage = async (messageId) => {
+    console.log("Mensagem visualidada:", messageId);
+  };
+
   const viewChats = async () => {
     try {
       const responseViewChat = await axios.get(
@@ -991,20 +1091,38 @@ function ChattingPage({ account, onLogout, setUser }) {
               : "http://localhost:3000/img/default-group.png",
           };
         } else {
-          return {
-            ...chat,
-            chattings: chat.chattings.map((chatting) => ({
-              ...chatting,
-              user: {
-                ...chatting.user,
-                profileImage:
-                  chatting.user.id != userId && chatting.user.profileImage
-                    ? `data:image/jpeg;base64,${chatting.user.profileImage}`
-                    : chatting.user.profileImage ||
-                      "http://localhost:3000/img/userProfile/default/user-profile-default.svg",
-              },
-            })),
-          };
+          if (chat.chattings.length > 1) {
+            return {
+              ...chat,
+              chattings: chat.chattings.map((chatting) => ({
+                ...chatting,
+                user: {
+                  ...chatting.user,
+                  profileImage:
+                    chatting.user.id != userId && chatting.user.profileImage
+                      ? `data:image/jpeg;base64,${chatting.user.profileImage}`
+                      : chatting.user.profileImage ||
+                        "http://localhost:3000/img/userProfile/default/user-profile-default.svg",
+                },
+              })),
+            };
+          } else {
+            if (chat.userDeletedChat?.length > 0) {
+              return {
+                ...chat,
+                groupImage:
+                  "http://localhost:3000/img/userProfile/default/user-profile-default.svg",
+                title: chat.userDeletedChat[0],
+              };
+            } else {
+              return {
+                ...chat,
+                groupImage:
+                  "http://localhost:3000/img/userProfile/default/user-profile-default.svg",
+                title: "Usuário deletado",
+              };
+            }
+          }
         }
       });
 
@@ -1013,7 +1131,6 @@ function ChattingPage({ account, onLogout, setUser }) {
       setAllChats(chatsData);
       setChatsId(allChatsId);
 
-      // console.log(allChatsId);
       // console.log(chatsId);
       // console.log(chatsData);
     } catch (err) {
@@ -1022,49 +1139,103 @@ function ChattingPage({ account, onLogout, setUser }) {
     }
   };
 
-  useEffect(() => {
-    if (chatsId.length > 0) {
-      socket.emit("joinChats", { chatsId });
-    }
-  }, [chatsId]);
+  const reorderChats = async () => {
+    setAllChats((prevChats) => {
+      return [...prevChats].sort((a, b) => {
+        const moreRecentDate = (chat) => {
+          if (chat.messages?.length > 0) {
+            const latestMessage = chat.messages.reduce((prev, curr) =>
+              new Date(prev.timestamp) > new Date(curr.timestamp) ? prev : curr
+            );
+            return new Date(latestMessage.timestamp);
+          }
+          return new Date(chat.createdAt);
+        };
+
+        return moreRecentDate(b) - moreRecentDate(a);
+      });
+    });
+    // const newOrderAllChats = ;
+  };
 
   const viewAllInfoChat = async (chatId) => {
     try {
+      const pageMessages = parseInt(
+        messages.filter((msg) => msg.chatId === chatId).length / 20
+      );
+
       const responseViewAllInfoChat = await axios.get(
-        `http://localhost:8000/services/chats/${chatId}`
+        `http://localhost:8000/services/chats/${chatId}`,
+        {
+          params: { pageMessages },
+        }
       );
 
       const chat = responseViewAllInfoChat.data;
+      console.log(chat);
 
+      setCurrentChat(chat);
       setChatId(chatId);
-      setMessages(chat.messages);
-      scrollToLastMessage();
-      // setAllChats(chatsData);
 
-      console.log(chat.messages);
+      if (messages.length === 0 || messages[0].chatId !== chat.id) {
+        setMessages(chat.messages);
+      } else {
+        setMessages((prevMessages) => [...chat.messages, ...prevMessages]);
+      }
+
+      // scrollToLastMessage();
+      // setAllChats(chatsData);
     } catch (err) {
       console.error(err);
       console.log(err);
     }
   };
 
-  // useEffect(() => {
-  const createChat = async (userIdSent, userIdReceived) => {
-    // if (isFirstMessage) {
+  const createChat = async (userIdSent, userIdReceived, firstMessage) => {
     try {
       const responseCreateChat = await axios.post(
         `http://localhost:8000/services/chat/`,
-        { userIdSent, userIdReceived }
+        { userIdSent, userIdReceived, firstMessage }
       );
-
-      console.log(responseCreateChat.data);
-
-      setAllChats((prevChats) => [...prevChats, createChat]);
+      const newChatCreated = responseCreateChat.data;
+      const chattingsId = newChatCreated.chattings
+        .map((chatting) => chatting.userId)
+        .filter((id) => id !== userId);
+      socket.emit("newChat", {
+        chatId: responseCreateChat.data.id,
+        chattingsId,
+      });
+      viewChats();
+      viewAllInfoChat(responseCreateChat.data.id);
     } catch (err) {
       console.error(err);
       console.log(err);
     }
-    // };
+  };
+
+  const handleDeleteChat = async (chatId) => {
+    try {
+      const confirmDeleteChat = window.confirm(
+        "Tem certeza que deseja deletar essa conversa?"
+      );
+
+      if (confirmDeleteChat) {
+        const deleteChatOfUser = await axios.delete(
+          `http://localhost:8000/services/user/chat/${chatId}`,
+          {
+            params: { userId: userId, username: username },
+          }
+        );
+
+        alert(deleteChatOfUser.data);
+        socket.emit("userExitChat", { chatId });
+        exitChat();
+        viewChats();
+      }
+    } catch (err) {
+      console.error(err);
+      console.log(err.message);
+    }
   };
 
   return (
@@ -1098,11 +1269,7 @@ function ChattingPage({ account, onLogout, setUser }) {
                 }`}
                 src={profileImage}
                 onClick={(e) => {
-                  // if (changeProfileContainer) {
-                  // setChangeProfileContainer(false);
-                  // } else {
                   setChangeProfileContainer(true);
-                  // }
                 }}
               />
               {!changeProfileContainer ? (
@@ -1355,19 +1522,37 @@ function ChattingPage({ account, onLogout, setUser }) {
             className="userChatsContainer"
             style={{ display: changeProfileContainer ? "none" : "block" }}
           >
-            {allChats.length > 0 ? (
-              allChats.map((chat) => (
-                <div className="viewChatsRightContainer">
+            <div className="viewChatsRightContainer">
+              {allChats.length > 0 ? (
+                allChats.map((chat) => (
                   <div
                     className="viewChatsOverviewRightContainer"
+                    style={{
+                      border:
+                        (chat.userDeletedChat.length > 0 ||
+                          chat.deletedUser.length > 0) &&
+                        !chat.isGroup
+                          ? "0.5px solid rgb(255 0 0 / 50%)"
+                          : "0.5px solid rgb(61 68 73 / 50%)",
+                      // : "0.5px solid rgb(37 211 102 / 65%)",
+                    }}
+                    onMouseEnter={() => setShowOptionsOfChat(chat.id)}
+                    onMouseLeave={() => {
+                      setShowOptionsOfChat(null);
+                      setShowMenuOptionsOfChat(null);
+                    }}
                     onClick={() => {
                       setInicializeUserChat(true);
                       setCreatingChat(false);
-                      handleInicializeUserChat();
-                      setUsernameUserChatting(
-                        chat.chattings.find((item) => item.user.id != userId)
-                          ?.user.username
-                      );
+                      if (chat.chattings.length > 1) {
+                        setUsernameUserChatting(
+                          chat.chattings.find((item) => item.user.id != userId)
+                            ?.user.username
+                        );
+                      } else {
+                        setUsernameUserChatting(chat.title);
+                      }
+
                       setIdUserChatting(
                         chat.chattings.find((item) => item.user.id != userId)
                           ?.user.id
@@ -1377,7 +1562,9 @@ function ChattingPage({ account, onLogout, setUser }) {
                           ?.user.profileImage
                       );
                       setIsFirstMessage(false);
-                      viewAllInfoChat(chat.id);
+                      if (currentChat.id != chat.id) {
+                        viewAllInfoChat(chat.id).then(viewMessage());
+                      }
                     }}
                   >
                     <img
@@ -1391,31 +1578,69 @@ function ChattingPage({ account, onLogout, setUser }) {
                       }
                     />
                     <div className="chatTitleAndLastMessageContainer">
-                      <a className="chatTitle">
+                      <a
+                        className="chatTitle"
+                        style={{
+                          fontStyle:
+                            (chat.userDeletedChat.length > 0 ||
+                              chat.deletedUser.length > 0) &&
+                            !chat.isGroup &&
+                            "italic",
+                          opacity:
+                            (chat.userDeletedChat.length > 0 ||
+                              chat.deletedUser.length > 0) &&
+                            !chat.isGroup &&
+                            "0.55",
+                        }}
+                      >
                         {chat.title === null
                           ? chat.chattings.find(
                               (item) => item.user.id != userId
                             )?.user.username
                           : chat.title}
                       </a>
-                      <div className="chatMessageCheckContainer">
-                        <img
-                          src={
-                            chat.messages[0].viewed
-                              ? "/img/check-message-viewed-icon.svg"
-                              : "/img/check-message-icon.svg"
-                          }
-                          className="chatCheckMessageIcon"
-                        />
-                        <a className="chatLastMessage">
-                          <span
-                            style={{ display: chat.isGroup ? "block" : "none" }}
+                      {chat.messages[0] ? (
+                        <div className="chatMessageCheckContainer">
+                          <img
+                            style={{
+                              display: chat.messages[0] ? "block" : "none",
+                            }}
+                            src={
+                              (
+                                chat.chatId === lastMessage.chatId ??
+                                chat.messages[0].id > lastMessage.id
+                                  ? chat.messages[0].viewed
+                                  : lastMessage.viewed
+                              )
+                                ? "/img/check-message-viewed-icon.svg"
+                                : "/img/check-message-icon.svg"
+                            }
+                            className="chatCheckMessageIcon"
+                          />
+                          <a className="chatLastMessage">
+                            <span
+                              style={{
+                                display: chat.isGroup ? "block" : "none",
+                              }}
+                            >
+                              author
+                            </span>{" "}
+                            <ChatMessageContent
+                              chat={chat}
+                              lastMessage={lastMessage}
+                            />
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="chatMessageCheckContainer">
+                          <a
+                            className="chatLastMessage"
+                            style={{ fontSize: "11px" }}
                           >
-                            author
-                          </span>{" "}
-                          {chat.messages[0].content}
-                        </a>
-                      </div>
+                            Seja o primeiro a enviar uma mensagem!
+                          </a>
+                        </div>
+                      )}
                     </div>
                     <div
                       style={{
@@ -1431,50 +1656,102 @@ function ChattingPage({ account, onLogout, setUser }) {
                       }}
                     >
                       <div className="containerMessageViewedAndTimestamp">
-                        <div className="timestampLastMessageOfChat">
-                          <a>{formatTimestamp(chat.messages[0].timestamp)}</a>
-                        </div>
+                        {chat.messages.length > 0 && (
+                          <div className="timestampLastMessageOfChat">
+                            <ChatMessageTimestamp
+                              chat={chat}
+                              lastMessage={lastMessage}
+                            />
+                          </div>
+                        )}
                         <div
-                          className="numberOfNotificationsOnChat"
                           style={{
-                            display:
-                              chat.messages[0].authorId != userId
-                                ? // ?
-                                  "none"
-                                : // "block"
-                                  // : "none",
-                                  "block",
+                            display: "flex",
+                            flexDirection: "row",
+                            height: "100%",
+                            width: "100%",
+                            alignItems: "center",
+                            justifyContent: "center",
                           }}
                         >
-                          <span>
-                            {
-                              messages.filter(
-                                (msg) =>
-                                  msg.viewed === false && msg.authorId != userId
-                              ).length
-                            }
-                          </span>
+                          <NumberNotifications chat={chat} />
+                          <img
+                            className="moreOptionsOnChatCard"
+                            src="/img/ellipsis-vertical.svg"
+                            style={{
+                              scale: ".8",
+                              transform: "translateY(-30%)",
+                              display:
+                                showOptionsOfChat === chat.id
+                                  ? "block"
+                                  : "none",
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowMenuOptionsOfChat(chat.id);
+                            }}
+                          />
+                          {showMenuOptionsOfChat === chat.id && (
+                            <div
+                              className="chatCardOptionsMenu"
+                              style={{ userSelect: "none" }}
+                              onMouseLeave={() => {
+                                setShowOptionsOfChat(null);
+                                setShowMenuOptionsOfChat(null);
+                                // setShowMenuOptionsOfChat(false);
+                              }}
+                            >
+                              <a
+                                style={{
+                                  color: "#ffffff",
+                                  fontSize: "15px",
+                                  letterSpacing: ".25px",
+                                  // paddingLeft: "8px",
+                                }}
+                              >
+                                Encaminhar contato
+                              </a>
+                              <a
+                                style={{
+                                  color: "#ff0000",
+                                  fontSize: "15px",
+                                  letterSpacing: ".25px",
+                                  // paddingLeft: "8px",
+                                }}
+                                onClick={(e) => {
+                                  handleDeleteChat(chat.id);
+                                  e.stopPropagation();
+                                }}
+                              >
+                                Deletar conversa
+                              </a>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
                   </div>
+                ))
+              ) : (
+                <div className="userWithNoChats">
+                  <p style={{ userSelect: "none" }}>Nenhum chat disponível</p>
                 </div>
-              ))
-            ) : (
-              <p>Nenhum chat disponível.</p>
-            )}
-            <div className="userCreateChatsContainer">
+              )}
+            </div>
+            <div
+              className="userCreateChatsContainer"
+              onMouseEnter={() => {
+                setFocusedCreateChattingIcon(true);
+              }}
+              onMouseLeave={() => {
+                setFocusedCreateChattingIcon(false);
+              }}
+            >
               <div
                 className="userCreateChatsDescriptionContainer"
                 style={{
                   display:
                     isFocusedCreateChattingIcon || isTutorial ? "flex" : "none",
-                }}
-                onMouseEnter={() => {
-                  setFocusedCreateChattingIcon(true);
-                }}
-                onMouseLeave={() => {
-                  setFocusedCreateChattingIcon(false);
                 }}
               >
                 <a
@@ -1500,19 +1777,7 @@ function ChattingPage({ account, onLogout, setUser }) {
                   Criar Grupo
                 </a>
               </div>
-              <div
-                className="userCreateIconsContainer"
-                // onFocus={() => {
-                //   setFocusedCreateChattingIcon(true);
-                //   console.log(isFocusedCreateChattingIcon);
-                // }}
-                onMouseEnter={() => {
-                  setFocusedCreateChattingIcon(true);
-                }}
-                onMouseLeave={() => {
-                  setFocusedCreateChattingIcon(false);
-                }}
-              >
+              <div className="userCreateIconsContainer">
                 <img
                   className="iconCreateChats"
                   style={{
@@ -1523,8 +1788,16 @@ function ChattingPage({ account, onLogout, setUser }) {
                         ? "saturate(0%) brightness(300%)"
                         : "",
                   }}
+                  onMouseEnter={() => {}}
                   src="/img/create-chat-icon.svg"
                   onClick={() => {
+                    setSearchingUser(false);
+                    setUsersData([]);
+                    setUsersFoundQuantity("");
+                    setCurrentPage(1);
+                    setTotalPages("");
+                    setChatGroup(false);
+                    setChatUser(false);
                     setCreatingChat(true);
                     setChatGroup(false);
                     setChatUser(true);
@@ -1542,6 +1815,13 @@ function ChattingPage({ account, onLogout, setUser }) {
                   className="iconCreateChats"
                   src="/img/create-group-icon.svg"
                   onClick={() => {
+                    setSearchingUser(false);
+                    setUsersData([]);
+                    setUsersFoundQuantity("");
+                    setCurrentPage(1);
+                    setTotalPages("");
+                    setChatGroup(false);
+                    setChatUser(false);
                     setCreatingChat(true);
                     setChatUser(false);
                     setSearchingUser(false);
@@ -1598,6 +1878,13 @@ function ChattingPage({ account, onLogout, setUser }) {
                       type="text"
                       placeholder="Digite o Username para qual deseja enviar a mensagem"
                       style={{ marginBottom: "10px" }}
+                      onKeyUp={(e) => {
+                        if (e.key === "Enter" && e.target.value.length > 0) {
+                          setNoUserFound(false);
+                          searchUser(searchUsername);
+                          setSearchingUser(true);
+                        }
+                      }}
                       onChange={(e) => {
                         setSearchUsername(e.target.value);
                       }}
@@ -1660,15 +1947,14 @@ function ChattingPage({ account, onLogout, setUser }) {
                                   onClick={() => {
                                     setInicializeUserChat(true);
                                     setCreatingChat(false);
-                                    handleInicializeUserChat();
                                     setUsernameUserChatting(users.username);
                                     setIdUserChatting(users.id);
                                     setProfileImageUserChatting(
                                       users.profileImage
                                     );
-                                    discardCreatingChat();
+                                    // discardCreatingChat();
                                     setIsFirstMessage(true);
-                                    createChat(userId, users.id);
+                                    // createChat(userId, users.id);
                                   }}
                                 >
                                   Iniciar Conversa
@@ -1701,7 +1987,8 @@ function ChattingPage({ account, onLogout, setUser }) {
                                 opacity: "0.7",
                               }}
                             >
-                              Não foi encontrado um usuário com este Username.
+                              Não foi encontrado um usuário com este username
+                              que você não tenha uma conversa.
                             </a>
                           </div>
                         )}
@@ -1726,88 +2013,217 @@ function ChattingPage({ account, onLogout, setUser }) {
             <div className="userChatContainer">
               <div className="userChatLabel">
                 <div className="closeChatButtonContainer">
-                  <button
-                    className="closeButton"
-                    onClick={exitChat}
-                    // onClick={discardAllChanges}
-                  >
+                  <button className="closeButton" onClick={exitChat}>
                     x
                   </button>
                 </div>
                 <div className="userChattingProfileContainer">
-                  <img src={profileImageUserChatting} />
-                  <a className="usernameChatting">{usernameUserChatting}</a>
+                  <img
+                    src={
+                      profileImageUserChatting
+                        ? profileImageUserChatting
+                        : "http://localhost:3000/img/userProfile/default/user-profile-default.svg"
+                    }
+                  />
+                  <a
+                    className="usernameChatting"
+                    style={{
+                      color:
+                        currentChat?.deletedUser?.length > 0 &&
+                        !currentChat.isGroup
+                          ? "#f700008c"
+                          : "#ffffff",
+                      fontStyle:
+                        currentChat?.deletedUser?.length > 0 &&
+                        !currentChat.isGroup
+                          ? "italic"
+                          : "normal",
+                    }}
+                  >
+                    {usernameUserChatting}
+                  </a>
+                  {currentChat?.deletedUser?.length > 0 &&
+                    !currentChat.isGroup && (
+                      <img
+                        onClick={() => handleDeleteChat(currentChat.id)}
+                        style={{
+                          scale: ".5",
+                          transform: "translateX(-50%)",
+                          cursor: "pointer",
+                        }}
+                        src={"http://localhost:3000/img/delete-icon.svg"}
+                      />
+                    )}
+                </div>
+                <div
+                  style={{
+                    className: "statusLabelUserChatting",
+                    backgroundColor: onlineUsers.includes(idUserChatting)
+                      ? "#25d366"
+                      : "#f700008c",
+                    boxShadow: onlineUsers.includes(idUserChatting)
+                      ? "inset 0px 5px 7px 0px rgb(25 151 72) "
+                      : "inset 0px -8px 7px 0px #f700008c",
+                    width: "100%",
+                    // height: "2.5px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: "100%",
+                      // height: "100%",
+                      textAlign: "center",
+                      fontSize: "12px",
+                      letterSpacing: "1.5px",
+                      color: "#ffffff",
+                      userSelect: "none",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {onlineUsers.includes(idUserChatting)
+                      ? "Online"
+                      : currentChat?.userDeletedChat?.length > 0 &&
+                        !currentChat?.isGroup
+                      ? "Usuário deletou a conversa."
+                      : "Offline"}
+                  </span>
                 </div>
               </div>
-              <div className="chatContainer">
-                {isFirstMessage && (
+              <div
+                className="chatContainer"
+                onScroll={handleScrollLoadMoreMessages}
+                ref={containerRef}
+                onMouseEnter={viewMessage}
+              >
+                {messages.length === 0 && (
                   <div className="welcomeToUserChatContainer">
                     <a>Envie sua primeira mensagem ao {usernameUserChatting}</a>
                   </div>
                 )}
-                {messages.map((msg, index) => (
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "fit-content",
-                      display: "flex",
-                      justifyContent:
-                        msg.authorId === userId ? "flex-start" : "flex-end",
-                    }}
-                    ref={lastMessageSend}
-                    onFocusCapture={{}}
-                    // FOCUS
-                  >
+                {messages.length > 0 &&
+                  messages.map((msg, index) => (
                     <div
-                      key={index}
-                      className={
-                        // "messageSentContainer"
-                        msg.authorId === userId
-                          ? "messageSentContainer"
-                          : "messageReceivedContainer"
+                      style={{
+                        width: "100%",
+                        height: "fit-content",
+                        display: "flex",
+                        justifyContent:
+                          msg.authorId === userId ? "flex-end" : "flex-start",
+                      }}
+                      ref={
+                        index === messages.length - 1 ? lastMessageSend : null
                       }
                     >
-                      <a className="messageContent">{msg.content}</a>
-                      <div className="messageInfoCheckTimestamp">
-                        <img
-                          className="messageCheckIcon"
-                          src={
-                            msg.viewed
-                              ? "/img/check-message-viewed-icon.svg"
-                              : "/img/check-message-icon.svg"
+                      <div
+                        key={index}
+                        className={
+                          // "messageSentContainer"
+                          msg.authorId === userId
+                            ? "messageSentContainer"
+                            : "messageReceivedContainer"
+                        }
+                        onMouseEnter={() => {
+                          if (msg.authorId === userId) {
+                            setFocusedOnMessage(msg.id);
                           }
-                        />
-                        <a className="messageTimestamp">
-                          {formatTimestamp(msg.timestamp)}
-                        </a>
+                        }}
+                      >
+                        <a className="messageContent">{msg.content}</a>
+                        <div className="messageInfoCheckTimestamp">
+                          <img
+                            className="messageCheckIcon"
+                            src={
+                              msg.viewed
+                                ? "/img/check-message-viewed-icon.svg"
+                                : "/img/check-message-icon.svg"
+                            }
+                          />
+                          <a className="messageTimestamp">
+                            {formatTimestamp(msg.timestamp)}
+                          </a>
+                          <img
+                            className="moreOptionsOnMessageCard"
+                            src="/img/ellipsis-vertical.svg"
+                            style={{
+                              scale: ".6",
+                              // transform: "translateY(-30%)",
+                              display:
+                                msg.authorId === userId ? "block" : "none",
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // setShowMenuOptionsOfChat(chat.id);
+                            }}
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
               </div>
-              <div className="sendMessageToChatContainer">
-                <input
-                  className="sendMessageToChatInput"
-                  type="text"
-                  value={messageInput}
-                  onKeyDown={handleEnterInputMessage}
-                  onChange={(e) => {
-                    setMessageInput(e.target.value);
+              {currentChat?.chattings?.length < 2 ? (
+                <div
+                  className="sendMessageToChatContainer"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
-                  onKeyUp={(e) => {
-                    if (e.key === "Enter" && e.target.value.length > 0) {
+                >
+                  <a
+                    style={{
+                      color: "#25d366",
+                      // fontStyle: "italic",
+                    }}
+                  >
+                    Você é o único usuário dessa conversa, portanto a conversa
+                    está disponível em modo de visualização.
+                  </a>
+                </div>
+              ) : (
+                <div className="sendMessageToChatContainer">
+                  <input
+                    className="sendMessageToChatInput"
+                    type="text"
+                    value={messageInput}
+                    onChange={(e) => {
                       setMessageInput(e.target.value);
-                      sendMessage();
-                      setIsFirstMessage(false);
-                    }
-                  }}
-                />
-                <img
-                  className="sendMessageIcon"
-                  src="/img/send-message-icon.svg"
-                  onClick={sendMessage}
-                />
-              </div>
+                    }}
+                    onKeyUp={(e) => {
+                      if (e.key === "Enter" && e.target.value.length > 0) {
+                        setMessageInput(e.target.value);
+                        if (messages.length === 0) {
+                          createChat(userId, idUserChatting, e.target.value);
+                          setMessageInput("");
+                        } else {
+                          sendMessage();
+                        }
+                        if (currentChat?.messages?.length === 0) {
+                          viewChats();
+                        }
+                      }
+                    }}
+                  />
+                  <img
+                    className="sendMessageIcon"
+                    src="/img/send-message-icon.svg"
+                    onClick={() => {
+                      if (messages.length === 0) {
+                        createChat(userId, idUserChatting, messageInput);
+                        setMessageInput("");
+                      } else {
+                        sendMessage();
+                      }
+                      if (currentChat?.messages?.length === 0) {
+                        viewChats();
+                      }
+                    }}
+                  />
+                </div>
+              )}
             </div>
           ) : (
             <div className="landingChattingPage">

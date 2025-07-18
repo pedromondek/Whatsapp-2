@@ -39,21 +39,21 @@ export const servicesModule = (prisma: PrismaClient) => {
 
   // user get by username
   router.get('/user/search', async (req, res) => {
-    const { username, page, pageSize } = req.query;
+    const { usernameSearch, page, pageSize, username } = req.query;
 
-    if (!username) {
+    if (!usernameSearch) {
       res.status(400).send('Pesquisa Inválida: Usuário indefinido.');
       return;
     }
 
     const searchUser: ISearchUser = {
-      username: String(username),
+      username: String(usernameSearch),
       page: Number(page ?? 0),
       pageSize: Number(pageSize ?? 6),
     };
 
     try {
-      const result = await servicesMethods.getUserByUsername(searchUser);
+      const result = await servicesMethods.getUserByUsername(searchUser, String(username));
       if (result) {
         res.json(result);
       } else {
@@ -194,6 +194,7 @@ export const servicesModule = (prisma: PrismaClient) => {
   // user delete
   router.delete('/user/:id', async (req, res) => {
     const { id } = req.params;
+    const { username } = req.query;
 
     const userId = Number(id);
 
@@ -202,7 +203,7 @@ export const servicesModule = (prisma: PrismaClient) => {
       return;
     }
 
-    await servicesMethods.deleteUser(userId).catch((error) => {
+    await servicesMethods.deleteUser(userId, String(username)).catch((error) => {
       console.error(error);
       res.status(error.status).send(`User delete failed:  ${error.message}`);
     });
@@ -241,6 +242,7 @@ export const servicesModule = (prisma: PrismaClient) => {
   // chat get by id
   router.get('/chats/:id', async (req, res) => {
     const { id } = req.params;
+    const { pageMessages } = req.query;
 
     const chatId = Number(id);
 
@@ -250,7 +252,7 @@ export const servicesModule = (prisma: PrismaClient) => {
     }
 
     res.send(
-      await servicesMethods.getChatById(chatId).catch((error) => {
+      await servicesMethods.getChatById(chatId, Number(pageMessages)).catch((error) => {
         console.error(error);
         res.status(error.status).send(`Não foi possível encontrar o chat: ${error.message}`);
       }),
@@ -259,17 +261,19 @@ export const servicesModule = (prisma: PrismaClient) => {
 
   // chat create
   router.post('/chat', async (req, res) => {
-    const { userIdSent, userIdReceived } = req.body;
+    const { userIdSent, userIdReceived, firstMessage } = req.body;
 
     if (isNaN(Number(userIdSent)) || isNaN(Number(userIdReceived))) {
       res.status(500).send('ID inválido: Não é um número.');
       return;
     }
 
-    const chatCreated = await servicesMethods.createChat(Number(userIdSent), Number(userIdReceived)).catch((error) => {
-      console.error(error);
-      res.status(error.status).send(`Falha ao criar chat: ${error.message}`);
-    });
+    const chatCreated = await servicesMethods
+      .createChat(Number(userIdSent), Number(userIdReceived), String(firstMessage))
+      .catch((error) => {
+        console.error(error);
+        res.status(error.status).send(`Falha ao criar chat: ${error.message}`);
+      });
 
     res.json(chatCreated);
   });
@@ -291,6 +295,27 @@ export const servicesModule = (prisma: PrismaClient) => {
     });
 
     res.send('Chat deletado com sucesso!');
+  });
+
+  // chat delete per user
+  router.delete('/user/chat/:chatId', async (req, res) => {
+    const { chatId } = req.params;
+
+    const userId = Number(req.query.userId);
+    const username = String(req.query.username);
+
+    if (isNaN(userId)) {
+      res.status(500).send('ID do usuário inválido: Não é um número.');
+      return;
+    }
+
+    const responseDelete = await servicesMethods.deleteChatOfUser(Number(chatId), userId, username).catch((error) => {
+      console.error(error);
+      console.log(error);
+      res.status(error.status).send(`Falha ao deletar o chat: ${error.response.data}`);
+    });
+
+    res.send(responseDelete);
   });
 
   // chat update title NÃO ESTÁ FEITO, IDEIA PARA GRUPO
@@ -350,6 +375,28 @@ export const servicesModule = (prisma: PrismaClient) => {
       res.status(error.status).send(error.message);
     }
   });
+
+  // get messages not viewed (notifications)
+  router.get('/chats/notifications/:id', async (req, res) => {
+    const { id } = req.params;
+
+    const idUser = Number(id);
+
+    if (isNaN(idUser)) {
+      res.status(500).send('ID do usuário inválido: Não é um número.');
+      return;
+    }
+
+    try {
+      res.send(await servicesMethods.getChatNotifications(idUser));
+    } catch (error) {
+      console.error(error);
+      res.status(error.status).send(error);
+    }
+  });
+
+  // update message
+  router.put('/message/:id', async (req, res) => {});
 
   return router;
 };

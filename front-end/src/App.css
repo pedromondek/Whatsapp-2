@@ -497,7 +497,7 @@
   /* margin-left: auto; */
   gap: 10px;
   bottom: 20px;
-  left: 432px;
+  left: 482px;
 
   width: 50px;
   height: 85px;
@@ -510,14 +510,14 @@
 
 /* .userCreateChatContainer, */
 .userCreateChatsDescriptionContainer {
-  /* cursor: pointer; */
+  cursor: pointer;
   /* border: 2px solid #ff0000; */
 
   width: 110px;
   height: 85px;
 
   bottom: 20px;
-  left: 323px;
+  left: 376px;
 
   position: fixed;
 
@@ -529,7 +529,7 @@
   align-self: flex-end;
   justify-content: center;
   text-align: end;
-  /* padding-right: 5px; */
+  padding-right: 5px;
   margin-left: auto;
 
   font-family: Helvetica Neue, Helvetica Neue, Helvetica, Arial, sans-serif;
@@ -574,6 +574,20 @@
   font-size: 20px;
   font-family: Helvetica Neue, Helvetica Neue, Helvetica, Arial, sans-serif;
   color: #ffffff;
+}
+
+.userWithNoChats {
+  font-family: Helvetica Neue, Helvetica Neue, Helvetica, Arial, sans-serif;
+  color: #ffffff;
+  font-size: 24px;
+
+  width: 100%;
+  height: 100%;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
 }
 
 .creatingChatWithUserContainer,
@@ -857,7 +871,7 @@
   width: 100%;
   height: 9dvh;
 
-  margin-bottom: 8px;
+  margin-bottom: 18px;
 
   background-color: #373e42;
 }
@@ -869,7 +883,7 @@
   gap: 5px;
 
   width: 100%;
-  height: 85%;
+  height: 82.7%;
 
   /* overflow: scroll; */
   overflow-y: scroll;
@@ -888,6 +902,15 @@
     border-radius: 15px;
     background: #25d366;
   }
+}
+
+.statusLabelUserChatting {
+  height: "2.5px";
+  transition: smooth;
+}
+
+.statusLabelUserChatting:hover {
+  height: "20%";
 }
 
 .welcomeToUserChatContainer {
@@ -927,7 +950,7 @@
   margin-right: 10px;
 
   padding-left: 8px;
-  width: 75%;
+  width: 94%;
   height: 33%;
 
   border-radius: 150px;
@@ -953,6 +976,8 @@
 
   height: 100%;
   width: 100%;
+
+  /* border-bottom: 3.5px solid #f700008c; */
 }
 
 .userChattingProfileContainer img {
@@ -970,9 +995,11 @@
   word-spacing: 2px;
 }
 
-.messageReceivedContainer {
+.messageSentContainer {
   display: flex;
   flex-direction: column;
+  /* align-items: flex-end; */
+  align-items: flex-start;
 
   color: #ffffff;
   border: 1px solid #25d366;
@@ -993,9 +1020,10 @@
   margin-right: 1%;
 }
 
-.messageSentContainer {
+.messageReceivedContainer {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
 
   color: #ffffff;
   border: 1px solid #ffffffc4;
@@ -1100,6 +1128,10 @@
   /* box-shadow: -5px 0px 20px 0px #799b93; */
 }
 
+.viewChatsOverviewRightContainer:hover .moreOptionsOnChatCard {
+  display: block;
+}
+
 .chatImage {
   margin-left: 10px;
   /* margin-right: 10px; */
@@ -1201,6 +1233,33 @@
 
   transform: translateY(-30%);
   /* justify-self: center; */
+}
+
+.moreOptionsOnChatCard {
+  display: none;
+}
+
+.moreOptionsOnMessageCard {
+  display: block;
+  cursor: pointer;
+}
+
+.chatCardOptionsMenu {
+  z-index: 5;
+
+  position: absolute;
+
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+
+  transform: translate(59%, 25%);
+
+  width: 10%;
+  height: 5%;
+
+  background-color: #3d4449;
 }
 
 .timestampLastMessageOfChat {

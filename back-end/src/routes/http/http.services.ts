@@ -24,7 +24,6 @@ export class HttpMethods {
     });
   }
 
-  // mexer na mensagem
   async getLogin(body: IUserBody): Promise<Omit<User, 'profileImage'> | undefined> {
     const login = await this.prisma.user
       .findUniqueOrThrow({
@@ -60,12 +59,33 @@ export class HttpMethods {
       console.log(`Senha incorreta`);
       throw new Error(`Senha incorreta`);
     }
+  }
 
-    // async createMessage(createMessageDto: CreateMessageDto): Promise<Message> {}
+  async userConnect(userId: number): Promise<void> {
+    await this.prisma.user
+      .update({
+        where: { id: userId },
+        data: { online: true },
+      })
+      .catch((error) => {
+        throw new Error(error);
+      });
+  }
+
+  async userDisconnect(userId: number): Promise<void> {
+    await this.prisma.user
+      .update({
+        where: { id: userId },
+        data: { online: false },
+      })
+      .catch((error) => {
+        throw new Error(error);
+      });
   }
 
   async getUserByUsername(
     searchUser: ISearchUser,
+    username: string,
   ): Promise<{ data: IResponseUserSearch[]; currentPage: number; itemsPerPage: number; totalPages: number; totalItems: number } | null> {
     const pagination = {
       page: searchUser.page != 0 && searchUser.page ? searchUser.page - 1 : 0,
@@ -75,7 +95,10 @@ export class HttpMethods {
     const [viewUsername, count] = await this.prisma.$transaction([
       this.prisma.user.findMany({
         where: {
-          username: { contains: searchUser.username },
+          username: { contains: searchUser.username, not: username },
+          NOT: {
+            chats: { some: { chat: { isGroup: false, chattings: { some: { user: { username } } } } } },
+          },
         },
         select: {
           username: true,
@@ -217,7 +240,17 @@ export class HttpMethods {
     }
   }
 
-  async deleteUser(id: number): Promise<void> {
+  async deleteUser(id: number, username: string): Promise<void> {
+    await this.prisma.chat.updateMany({
+      where: { chattings: { some: { userId: id } } },
+      data: { deletedUser: { push: username } },
+    });
+
+    await this.prisma.message.updateMany({
+      where: { authorId: id },
+      data: { userDeleted: true },
+    });
+
     await this.prisma.user
       .delete({
         where: {
@@ -278,6 +311,8 @@ export class HttpMethods {
       id: chat.id,
       title: chat.title,
       createdAt: chat.createdAt,
+      deletedUser: chat.deletedUser,
+      userDeletedChat: chat.userDeletedChat,
       isGroup: chat.isGroup,
       groupImage: chat.groupImage ? Buffer.from(chat.groupImage).toString('base64') : null,
       chattings: await Promise.all(chat.chattings.map((userChat) => this.toUserChatDto(userChat))),
@@ -293,11 +328,20 @@ export class HttpMethods {
           chats: {
             select: {
               chat: {
-                include: {
+                select: {
+                  id: true,
+                  title: true,
+                  createdAt: true,
+                  isGroup: true,
+                  userDeletedChat: true,
+                  groupImage: true,
+                  deletedUser: true,
+
                   messages: {
                     orderBy: { id: 'desc' },
                     take: 1,
                   },
+
                   chattings: {
                     include: {
                       user: {
@@ -329,21 +373,29 @@ export class HttpMethods {
     }
   }
 
-  async getChatById(id: number): Promise<Chat> {
-    return await this.prisma.chat
+  async getChatById(id: number, pageMessages: number): Promise<Chat> {
+    const chat = await this.prisma.chat
       .findUniqueOrThrow({
         where: { id },
         include: {
           chattings: true,
-          messages: true,
+          messages: {
+            orderBy: { id: 'desc' },
+            skip: pageMessages * 20,
+            take: 20,
+          },
         },
       })
       .catch((error) => {
         throw new Error(error);
       });
+
+    chat.messages = chat.messages.slice().reverse();
+
+    return chat;
   }
 
-  async createChat(userIdSent: number, userIdReceived: number): Promise<Chat> {
+  async createChat(userIdSent: number, userIdReceived: number, firstMessage: string): Promise<Chat> {
     try {
       const chatAlreadyExist = await this.prisma.chat.findFirst({
         where: {
@@ -374,6 +426,11 @@ export class HttpMethods {
         .create({
           data: {
             chattings: { create: [{ userId: userIdSent }, { userId: userIdReceived }] },
+            messages: { create: { authorId: userIdSent, content: firstMessage, timestamp: new Date() } },
+          },
+          include: {
+            chattings: true,
+            messages: true,
           },
         })
         .catch((error) => {
@@ -397,6 +454,55 @@ export class HttpMethods {
       .catch((error) => {
         throw new Error(error);
       });
+  }
+
+  async deleteChatOfUser(chatId: number, userId: number, username: string): Promise<string> {
+    const usersChattingsCount = await this.prisma.userChat.count({
+      where: { chatId },
+    });
+
+    const messagesCount = await this.prisma.message.count({
+      where: { chatId },
+    });
+
+    if (usersChattingsCount > 1 && messagesCount > 0) {
+      await this.prisma.userChat
+        .delete({
+          where: {
+            userId_chatId: { userId, chatId },
+          },
+        })
+        .catch((error) => {
+          throw new Error(`Falha ao remover usuário do chat: ${error}`);
+        });
+
+      await this.prisma.chat
+        .update({
+          where: { id: chatId },
+          data: {
+            userDeletedChat: { push: username },
+          },
+        })
+        .catch((error) => {
+          throw new Error(`Falha ao adicionar usuário à lista de usuários que deletaram o chat: ${error}`);
+        });
+
+      console.log(`Usuário de ID ${userId} saiu do chat ${chatId}`);
+      return 'Você saiu do Chat.';
+    } else {
+      await this.prisma.chat
+        .delete({
+          where: {
+            id: chatId,
+          },
+        })
+        .catch((error) => {
+          throw new Error(`Falha ao deletar chat: ${error}`);
+        });
+
+      console.log(`Usuário de ID ${userId} deletou o chat ${chatId}`);
+      return 'Você deletou a conversa.';
+    }
   }
 
   // message methods
@@ -434,5 +540,35 @@ export class HttpMethods {
       });
 
     return message;
+  }
+
+  async getChatNotifications(userId: number): Promise<{ chatId: number; messagesUnviewed: number }[]> {
+    try {
+      const notifications = await this.prisma.message.groupBy({
+        by: ['chatId'],
+        _count: {
+          _all: true,
+        },
+        where: {
+          viewed: false,
+          authorId: { not: userId },
+        },
+      });
+
+      // console.log(notifications);
+      const responseNotifications = notifications.map((chat) => ({
+        chatId: chat.chatId,
+        messagesUnviewed: chat._count._all,
+      }));
+      // console.log(responseNotifications);
+
+      return responseNotifications;
+      // notifications.map((chat) => ({
+      //   chatId: chat.chatId,
+      //   messagesUnviewed: chat._count._all,
+      // }));
+    } catch (error) {
+      throw new Error(error);
+    }
   }
 }
